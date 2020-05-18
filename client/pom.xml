@@ -6,7 +6,7 @@
 
   <groupId>io.ebean</groupId>
   <artifactId>ebean-insight</artifactId>
-  <version>0.1-SNAPSHOT</version>
+  <version>0.7-SNAPSHOT</version>
 
   <parent>
     <groupId>org.avaje</groupId>
