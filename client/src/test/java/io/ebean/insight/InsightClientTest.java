@@ -18,18 +18,16 @@ public class InsightClientTest {
       .registerCGroupMetrics()
       .registerLogbackMetrics();
 
-    final InsightClient build = InsightClient.create()
-      .url("https://ebean.co")
-      //.url("http://localhost:8090")
+    InsightClient.create()
+      .url("http://localhost:8090")
       .periodSecs(5)
       .appName("test")
       .environment("local")
       .instanceId("1")
-      .key("Fsd45SDfd7")
+      .key("YeahNah")
       //.gzip(false)
       .collectEbeanMetrics(false)
       .build();
-
 
     Thread.sleep(40_000);
   }
