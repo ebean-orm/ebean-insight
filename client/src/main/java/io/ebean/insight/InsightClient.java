@@ -3,22 +3,29 @@ package io.ebean.insight;
 import io.avaje.metrics.MetricManager;
 import io.ebean.DB;
 import io.ebean.Database;
-import okhttp3.MediaType;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
-import okhttp3.ResponseBody;
+//import okhttp3.MediaType;
+//import okhttp3.OkHttpClient;
+//import okhttp3.Request;
+//import okhttp3.Response;
+//import okhttp3.ResponseBody;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.TimeUnit;
+import java.util.zip.GZIPOutputStream;
 
 /**
  * Client that collects Ebean metrics and Avaje metrics for
@@ -28,7 +35,7 @@ public class InsightClient {
 
   private static final Logger log = LoggerFactory.getLogger(InsightClient.class);
 
-  private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
+//  private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
   private final String key;
   private final String environment;
@@ -37,13 +44,14 @@ public class InsightClient {
   private final String version;
   private final String ingestUrl;
   private final long periodSecs;
+  private final boolean gzip;
   private final boolean collectEbeanMetrics;
   private final boolean collectAvajeMetrics;
   private final List<Database> databaseList = new ArrayList<>();
-
-  private final OkHttpClient client;
-
+//  private final OkHttpClient client;
   private final Timer timer;
+  private long contentLength;
+  private long contentLengthGzip;
 
   public static InsightClient.Builder create() {
     return new InsightClient.Builder();
@@ -56,13 +64,14 @@ public class InsightClient {
     this.appName = builder.appName;
     this.instanceId = builder.instanceId;
     this.version = builder.version;
+    this.gzip = builder.gzip;
     this.periodSecs = builder.periodSecs;
     if (!builder.databaseList.isEmpty()) {
       this.databaseList.addAll(builder.databaseList);
     }
     this.collectEbeanMetrics = builder.collectEbeanMetrics;
     this.collectAvajeMetrics = builder.isCollectAvajeMetrics();
-    this.client = builder.getHttpClient();
+//    this.client = builder.getHttpClient();
     this.timer = new Timer("MonitorSend", true);
   }
 
@@ -82,10 +91,21 @@ public class InsightClient {
 
   private void send() {
     try {
+      long timeStart = System.nanoTime();
       final String json = buildJsonContent();
-      log.debug("send metrics {}", json);
-      final String responseBody = post(ingestUrl, json);
-      log.debug("metrics response {}", responseBody);
+      log.trace("send metrics {}", json);
+      long timeCollect = System.nanoTime();
+      final String responseBody = post2(json);
+      //final String responseBody = post(ingestUrl, json);
+      log.trace("metrics response {}", responseBody);
+      long timeFinish = System.nanoTime();
+
+      if (log.isDebugEnabled()) {
+        long collectMicros = (timeCollect - timeStart) / 1000;
+        long reportMicros = (timeFinish - timeCollect) / 1000;
+        log.debug("metrics reported length:{}/{} reportMicros:{} collectMicros:{}", contentLength, contentLengthGzip, reportMicros, collectMicros);
+      }
+
     } catch (Throwable e) {
       log.error("Error reporting metrics", e);
     }
@@ -136,27 +156,84 @@ public class InsightClient {
     json.append("]");
   }
 
-  private String post(String url, String json) throws IOException {
+//  private String post(String url, String json) throws IOException {
+//
+//    contentLength = json.length();
+//
+//    final byte[] input;
+//    if (gzip) {
+//      input = gzip(json);
+//      contentLengthGzip = input.length;
+//    } else {
+//      input = json.getBytes(StandardCharsets.UTF_8);
+//    }
+//
+//    final Request.Builder builder = new Request.Builder()
+//      .url(url)
+//      .addHeader("Content-Type", "application/json")
+//      .addHeader("Insight-Key", key);
+//
+//    if (gzip) {
+//      builder.addHeader("Content-Encoding", "gzip");
+//    }
+//
+//    builder.post(RequestBody.create(input, JSON));
+//    return post(builder.build());
+//  }
 
-    final Request.Builder builder = new Request.Builder()
-      .url(url)
-      .post(RequestBody.create(json, JSON))
-      .addHeader("Content-Type", "application/json")
-      .addHeader("Insight-Key", key);
-
-    return post(builder.build());
+  static byte[] gzip(String str) throws IOException {
+    ByteArrayOutputStream obj = new ByteArrayOutputStream();
+    GZIPOutputStream gzip = new GZIPOutputStream(obj);
+    gzip.write(str.getBytes(StandardCharsets.UTF_8));
+    gzip.close();
+    return obj.toByteArray();
   }
 
-  private String post(Request request) throws IOException {
-    try (Response response = client.newCall(request).execute()) {
-      if (response.isSuccessful()) {
-        final ResponseBody body = response.body();
-        return body == null ? null : body.string();
-      } else {
-        throw new IOException("Failed request code:" + response.code() + " body:" + response.body() + " url:" + ingestUrl);
+  private String post2(String json) throws IOException {
+    contentLength = json.length();
+    byte[] input = gzip ? gzip(json) : json.getBytes(StandardCharsets.UTF_8);
+    contentLengthGzip = input.length;
+    return post2(input, gzip);
+  }
+
+  private String post2(byte[] input, boolean gzipped) throws IOException {
+    URL url = new URL(ingestUrl);
+    HttpURLConnection con = (HttpURLConnection)url.openConnection();
+    con.setRequestMethod("POST");
+    con.setRequestProperty("Content-Type", "application/json; utf-8");
+    if (gzipped) {
+      con.setRequestProperty("Content-Encoding", "gzip");
+    }
+    con.setRequestProperty("Insight-Key", key);
+    con.setDoOutput(true);
+    try(OutputStream os = con.getOutputStream()) {
+      os.write(input, 0, input.length);
+    }
+    try(BufferedReader br = new BufferedReader(
+      new InputStreamReader(con.getInputStream(), StandardCharsets.UTF_8))) {
+      StringBuilder response = new StringBuilder();
+      String line;
+      while ((line = br.readLine()) != null) {
+        response.append(line.trim());
       }
+      return response.toString();
     }
   }
+
+//  private String post(Request request) throws IOException {
+//    try (Response response = client.newCall(request).execute()) {
+//      if (response.isSuccessful()) {
+//        return bodyAsString(response);
+//      } else {
+//        throw new IOException("Failed request code:" + response.code() + " body:" + bodyAsString(response) + " url:" + ingestUrl);
+//      }
+//    }
+//  }
+//
+//  private String bodyAsString(Response response) throws IOException {
+//    final ResponseBody body = response.body();
+//    return (body == null) ? "" : body.string();
+//  }
 
   public static class Builder {
 
@@ -167,18 +244,19 @@ public class InsightClient {
     private String instanceId;
     private String version;
     private long periodSecs = 60;
+    private boolean gzip = true;
     private boolean collectEbeanMetrics = true;
     private boolean collectAvajeMetrics = true;
-    private final OkHttpClient client;
+//    private final OkHttpClient client;
     private final List<Database> databaseList = new ArrayList<>();
 
     Builder() {
-      this.client = new OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .writeTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
-        .callTimeout(5, TimeUnit.SECONDS)
-        .build();
+//      this.client = new OkHttpClient.Builder()
+//        .connectTimeout(30, TimeUnit.SECONDS)
+//        .writeTimeout(30, TimeUnit.SECONDS)
+//        .readTimeout(30, TimeUnit.SECONDS)
+//        .callTimeout(30, TimeUnit.SECONDS)
+//        .build();
 
       initFromSystemProperties();
     }
@@ -188,10 +266,10 @@ public class InsightClient {
       final String podService = podService(podName);
       this.url = System.getProperty("ebean.insight.url", System.getenv("INSIGHT_URL"));
       this.key = System.getProperty("ebean.insight.key", System.getenv("INSIGHT_KEY"));
-      this.appName = System.getProperty("appName", podService);
-      this.instanceId = System.getProperty("appInstanceId", podName);
-      this.environment = System.getProperty("appEnvironment", System.getenv("POD_NAMESPACE"));
-      this.version = System.getProperty("appVersion", System.getenv("POD_VERSION"));
+      this.appName = System.getProperty("app.name", podService);
+      this.instanceId = System.getProperty("app.instanceId", podName);
+      this.environment = System.getProperty("app.environment", System.getenv("POD_NAMESPACE"));
+      this.version = System.getProperty("app.version", System.getenv("POD_VERSION"));
     }
 
     String podService(String podName) {
@@ -233,6 +311,14 @@ public class InsightClient {
      */
     public Builder appName(String appName) {
       this.appName = appName;
+      return this;
+    }
+
+    /**
+     * Set whether to use gzip content encoding.
+     */
+    public Builder gzip(boolean gzip) {
+      this.gzip = gzip;
       return this;
     }
 
@@ -303,9 +389,9 @@ public class InsightClient {
       return collectAvajeMetrics && detectAvajeMetrics();
     }
 
-    OkHttpClient getHttpClient() {
-      return client;
-    }
+//    OkHttpClient getHttpClient() {
+//      return client;
+//    }
 
     private boolean detectAvajeMetrics() {
       try {

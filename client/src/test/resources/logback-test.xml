@@ -13,6 +13,6 @@
   </root>
 
   <logger name="io.dinject" level="INFO"/>
-  <logger name="io.ebean" level="DEBUG"/>
+  <logger name="io.ebean" level="TRACE"/>
 
 </configuration>
