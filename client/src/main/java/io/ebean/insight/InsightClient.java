@@ -42,7 +42,6 @@ public class InsightClient {
   private final List<Database> databaseList = new ArrayList<>();
   private final Timer timer;
   private long contentLength;
-  private long contentLengthGzip;
 
   public static InsightClient.Builder create() {
     return new InsightClient.Builder();
@@ -83,20 +82,21 @@ public class InsightClient {
     try {
       long timeStart = System.nanoTime();
       final String json = buildJsonContent();
-      log.trace("send metrics {}", json);
       long timeCollect = System.nanoTime();
-      final String responseBody = post2(json);
-      log.trace("metrics response {}", responseBody);
+      final String responseBody = post(json);
+      if (log.isTraceEnabled()) {
+        log.trace("send metrics {}", json);
+        log.trace("metrics response {}", responseBody);
+      }
       long timeFinish = System.nanoTime();
-
       if (log.isDebugEnabled()) {
         long collectMicros = (timeCollect - timeStart) / 1000;
         long reportMicros = (timeFinish - timeCollect) / 1000;
-        log.debug("metrics reported length:{}/{} reportMicros:{} collectMicros:{}", contentLength, contentLengthGzip, reportMicros, collectMicros);
+        log.debug("metrics reportMicros:{} collect:{} length:{}", reportMicros, collectMicros, contentLength);
       }
 
     } catch (Throwable e) {
-      log.error("Error reporting metrics", e);
+      log.warn("Error reporting metrics", e);
     }
   }
 
@@ -153,14 +153,14 @@ public class InsightClient {
     return obj.toByteArray();
   }
 
-  private String post2(String json) throws IOException {
+  private String post(String json) throws IOException {
     contentLength = json.length();
     byte[] input = gzip ? gzip(json) : json.getBytes(StandardCharsets.UTF_8);
-    contentLengthGzip = input.length;
-    return post2(input, gzip);
+    contentLength = input.length;
+    return postRaw(input, gzip);
   }
 
-  private String post2(byte[] input, boolean gzipped) throws IOException {
+  private String postRaw(byte[] input, boolean gzipped) throws IOException {
     URL url = new URL(ingestUrl);
     HttpURLConnection con = (HttpURLConnection)url.openConnection();
     con.setRequestMethod("POST");
