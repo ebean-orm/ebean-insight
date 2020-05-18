@@ -3,11 +3,6 @@ package io.ebean.insight;
 import io.avaje.metrics.MetricManager;
 import io.ebean.DB;
 import io.ebean.Database;
-//import okhttp3.MediaType;
-//import okhttp3.OkHttpClient;
-//import okhttp3.Request;
-//import okhttp3.Response;
-//import okhttp3.ResponseBody;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,7 +19,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
-import java.util.concurrent.TimeUnit;
 import java.util.zip.GZIPOutputStream;
 
 /**
@@ -34,8 +28,6 @@ import java.util.zip.GZIPOutputStream;
 public class InsightClient {
 
   private static final Logger log = LoggerFactory.getLogger(InsightClient.class);
-
-//  private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
   private final String key;
   private final String environment;
@@ -48,7 +40,6 @@ public class InsightClient {
   private final boolean collectEbeanMetrics;
   private final boolean collectAvajeMetrics;
   private final List<Database> databaseList = new ArrayList<>();
-//  private final OkHttpClient client;
   private final Timer timer;
   private long contentLength;
   private long contentLengthGzip;
@@ -71,7 +62,6 @@ public class InsightClient {
     }
     this.collectEbeanMetrics = builder.collectEbeanMetrics;
     this.collectAvajeMetrics = builder.isCollectAvajeMetrics();
-//    this.client = builder.getHttpClient();
     this.timer = new Timer("MonitorSend", true);
   }
 
@@ -96,7 +86,6 @@ public class InsightClient {
       log.trace("send metrics {}", json);
       long timeCollect = System.nanoTime();
       final String responseBody = post2(json);
-      //final String responseBody = post(ingestUrl, json);
       log.trace("metrics response {}", responseBody);
       long timeFinish = System.nanoTime();
 
@@ -156,31 +145,6 @@ public class InsightClient {
     json.append("]");
   }
 
-//  private String post(String url, String json) throws IOException {
-//
-//    contentLength = json.length();
-//
-//    final byte[] input;
-//    if (gzip) {
-//      input = gzip(json);
-//      contentLengthGzip = input.length;
-//    } else {
-//      input = json.getBytes(StandardCharsets.UTF_8);
-//    }
-//
-//    final Request.Builder builder = new Request.Builder()
-//      .url(url)
-//      .addHeader("Content-Type", "application/json")
-//      .addHeader("Insight-Key", key);
-//
-//    if (gzip) {
-//      builder.addHeader("Content-Encoding", "gzip");
-//    }
-//
-//    builder.post(RequestBody.create(input, JSON));
-//    return post(builder.build());
-//  }
-
   static byte[] gzip(String str) throws IOException {
     ByteArrayOutputStream obj = new ByteArrayOutputStream();
     GZIPOutputStream gzip = new GZIPOutputStream(obj);
@@ -220,20 +184,6 @@ public class InsightClient {
     }
   }
 
-//  private String post(Request request) throws IOException {
-//    try (Response response = client.newCall(request).execute()) {
-//      if (response.isSuccessful()) {
-//        return bodyAsString(response);
-//      } else {
-//        throw new IOException("Failed request code:" + response.code() + " body:" + bodyAsString(response) + " url:" + ingestUrl);
-//      }
-//    }
-//  }
-//
-//  private String bodyAsString(Response response) throws IOException {
-//    final ResponseBody body = response.body();
-//    return (body == null) ? "" : body.string();
-//  }
 
   public static class Builder {
 
@@ -247,17 +197,9 @@ public class InsightClient {
     private boolean gzip = true;
     private boolean collectEbeanMetrics = true;
     private boolean collectAvajeMetrics = true;
-//    private final OkHttpClient client;
     private final List<Database> databaseList = new ArrayList<>();
 
     Builder() {
-//      this.client = new OkHttpClient.Builder()
-//        .connectTimeout(30, TimeUnit.SECONDS)
-//        .writeTimeout(30, TimeUnit.SECONDS)
-//        .readTimeout(30, TimeUnit.SECONDS)
-//        .callTimeout(30, TimeUnit.SECONDS)
-//        .build();
-
       initFromSystemProperties();
     }
 
@@ -388,10 +330,6 @@ public class InsightClient {
     boolean isCollectAvajeMetrics() {
       return collectAvajeMetrics && detectAvajeMetrics();
     }
-
-//    OkHttpClient getHttpClient() {
-//      return client;
-//    }
 
     private boolean detectAvajeMetrics() {
       try {
