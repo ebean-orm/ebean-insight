@@ -10,17 +10,23 @@ import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
 import java.net.UnknownHostException;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.zip.GZIPOutputStream;
+
+import static java.net.http.HttpRequest.BodyPublishers.ofByteArray;
 
 /**
  * Client that collects Ebean metrics and Avaje metrics for
@@ -35,7 +41,8 @@ public class InsightClient {
   private final String appName;
   private final String instanceId;
   private final String version;
-  private final String ingestUrl;
+  //private final String ingestUrl;
+  private final URI ingestUri;
   private final String pingUrl;
   private final long periodSecs;
   private final boolean gzip;
@@ -46,12 +53,15 @@ public class InsightClient {
   private long contentLength;
   private boolean active;
 
+  private final HttpClient httpClient;
+
   public static InsightClient.Builder create() {
     return new InsightClient.Builder();
   }
 
   private InsightClient(Builder builder) {
-    this.ingestUrl = builder.url + "/api/ingest/metrics";
+    //this.ingestUrl = builder.url + "/api/ingest/metrics";
+    this.ingestUri = URI.create(builder.url + "/api/ingest/metrics");
     this.pingUrl = builder.url + "/api/ingest";
     this.key = builder.key;
     this.environment = builder.environment;
@@ -66,6 +76,10 @@ public class InsightClient {
     this.collectEbeanMetrics = builder.collectEbeanMetrics;
     this.collectAvajeMetrics = builder.isCollectAvajeMetrics();
     this.timer = new Timer("MonitorSend", true);
+    this.httpClient = HttpClient.newBuilder()
+      .version(HttpClient.Version.HTTP_1_1)
+      .connectTimeout(Duration.ofSeconds(30))
+      .build();
   }
 
   /**
@@ -194,19 +208,41 @@ public class InsightClient {
   }
 
   private String httpPost(byte[] input, boolean gzipped) throws IOException {
-    URL url = new URL(ingestUrl);
-    HttpURLConnection con = (HttpURLConnection) url.openConnection();
-    con.setRequestMethod("POST");
-    con.setRequestProperty("Content-Type", "application/json; utf-8");
+    final HttpRequest.Builder builder = HttpRequest.newBuilder()
+      .POST(ofByteArray(input))
+      .uri(ingestUri)
+      .setHeader("Content-Type", "application/json; utf-8")
+      .setHeader("Insight-Key", key);
+
     if (gzipped) {
-      con.setRequestProperty("Content-Encoding", "gzip");
+      builder.setHeader("Content-Encoding", "gzip");
     }
-    con.setRequestProperty("Insight-Key", key);
-    con.setDoOutput(true);
-    try (OutputStream os = con.getOutputStream()) {
-      os.write(input, 0, input.length);
+
+    try {
+      HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+      if (response.statusCode() < 300) {
+        return response.body();
+      } else {
+        throw new IOException("POST Unsuccessful " + response.statusCode() + " " + response.body());
+      }
+
+    } catch (InterruptedException e) {
+      throw new IOException("Interrupted?", e);
     }
-    return readResponse(con);
+
+//    URL url = new URL(ingestUrl);
+//    HttpURLConnection con = (HttpURLConnection) url.openConnection();
+//    con.setRequestMethod("POST");
+//    con.setRequestProperty("Content-Type", "application/json; utf-8");
+//    if (gzipped) {
+//      con.setRequestProperty("Content-Encoding", "gzip");
+//    }
+//    con.setRequestProperty("Insight-Key", key);
+//    con.setDoOutput(true);
+//    try (OutputStream os = con.getOutputStream()) {
+//      os.write(input, 0, input.length);
+//    }
+//    return readResponse(con);
   }
 
   private String httpPing() throws IOException {
