@@ -6,6 +6,8 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public class InsightClientTest {
 
@@ -15,11 +17,10 @@ public class InsightClientTest {
 
     MetricManager.jvmMetrics()
       .registerJvmMetrics()
-      .registerCGroupMetrics()
       .registerLogbackMetrics();
 
-    InsightClient.create()
-      .url("http://localhost:8090")
+    final InsightClient client = InsightClient.create()
+      //.url("http://localhost:8090")
       .periodSecs(5)
       .appName("test")
       .environment("local")
@@ -29,7 +30,32 @@ public class InsightClientTest {
       .collectEbeanMetrics(false)
       .build();
 
+    assertTrue(client.isActive());
+
     Thread.sleep(40_000);
+  }
+
+  @Ignore
+  @Test
+  public void pingFailed_expect_notStarted() throws InterruptedException {
+
+    MetricManager.jvmMetrics()
+      .registerJvmMetrics();
+
+    final InsightClient client = InsightClient.create()
+      .url("http://doesNotExist:8090")
+      .periodSecs(1)
+      .appName("test")
+      .environment("local")
+      .instanceId("1")
+      .key("YeahNah")
+      .collectEbeanMetrics(false)
+      .build();
+
+    assertFalse(client.isActive());
+    assertFalse(client.ping());
+
+    Thread.sleep(5_000);
   }
 
   @Test

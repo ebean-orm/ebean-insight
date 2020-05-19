@@ -13,6 +13,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Date;
@@ -35,6 +36,7 @@ public class InsightClient {
   private final String instanceId;
   private final String version;
   private final String ingestUrl;
+  private final String pingUrl;
   private final long periodSecs;
   private final boolean gzip;
   private final boolean collectEbeanMetrics;
@@ -42,6 +44,7 @@ public class InsightClient {
   private final List<Database> databaseList = new ArrayList<>();
   private final Timer timer;
   private long contentLength;
+  private boolean active;
 
   public static InsightClient.Builder create() {
     return new InsightClient.Builder();
@@ -49,6 +52,7 @@ public class InsightClient {
 
   private InsightClient(Builder builder) {
     this.ingestUrl = builder.url + "/api/ingest/metrics";
+    this.pingUrl = builder.url + "/api/ingest";
     this.key = builder.key;
     this.environment = builder.environment;
     this.appName = builder.appName;
@@ -64,11 +68,41 @@ public class InsightClient {
     this.timer = new Timer("MonitorSend", true);
   }
 
+  /**
+   * Return true if this is actively reporting metrics.
+   */
+  public boolean isActive() {
+    return active;
+  }
+
   InsightClient start() {
-    long periodMillis = periodSecs * 1000;
-    Date first = new Date(System.currentTimeMillis() + periodMillis);
-    timer.schedule(new Task(), first, periodMillis);
+    if (key == null || key.trim().length() == 0) {
+      log.debug("insight not enabled");
+      return this;
+    }
+    if (ping()) {
+      active = true;
+      long periodMillis = periodSecs * 1000;
+      Date first = new Date(System.currentTimeMillis() + periodMillis);
+      timer.schedule(new Task(), first, periodMillis);
+      log.info("insight enabled");
+    }
     return this;
+  }
+
+  /**
+   * Return true if the insight host can be accessed.
+   */
+  boolean ping() {
+    try {
+      return "ok".equals(httpPing());
+    } catch (UnknownHostException e) {
+      log.debug("Ping unsuccessful " + e);
+      return false;
+    } catch (IOException e) {
+      log.debug("Ping unsuccessful " + e, e);
+      return false;
+    }
   }
 
   private class Task extends TimerTask {
@@ -85,8 +119,7 @@ public class InsightClient {
       long timeCollect = System.nanoTime();
       final String responseBody = post(json);
       if (log.isTraceEnabled()) {
-        log.trace("send metrics {}", json);
-        log.trace("metrics response {}", responseBody);
+        log.trace("send metrics {} response:{}", json, responseBody);
       }
       long timeFinish = System.nanoTime();
       if (log.isDebugEnabled()) {
@@ -157,12 +190,12 @@ public class InsightClient {
     contentLength = json.length();
     byte[] input = gzip ? gzip(json) : json.getBytes(StandardCharsets.UTF_8);
     contentLength = input.length;
-    return postRaw(input, gzip);
+    return httpPost(input, gzip);
   }
 
-  private String postRaw(byte[] input, boolean gzipped) throws IOException {
+  private String httpPost(byte[] input, boolean gzipped) throws IOException {
     URL url = new URL(ingestUrl);
-    HttpURLConnection con = (HttpURLConnection)url.openConnection();
+    HttpURLConnection con = (HttpURLConnection) url.openConnection();
     con.setRequestMethod("POST");
     con.setRequestProperty("Content-Type", "application/json; utf-8");
     if (gzipped) {
@@ -170,10 +203,21 @@ public class InsightClient {
     }
     con.setRequestProperty("Insight-Key", key);
     con.setDoOutput(true);
-    try(OutputStream os = con.getOutputStream()) {
+    try (OutputStream os = con.getOutputStream()) {
       os.write(input, 0, input.length);
     }
-    try(BufferedReader br = new BufferedReader(
+    return readResponse(con);
+  }
+
+  private String httpPing() throws IOException {
+    URL url = new URL(pingUrl);
+    HttpURLConnection con = (HttpURLConnection) url.openConnection();
+    con.setRequestProperty("Insight-Key", key);
+    return readResponse(con);
+  }
+
+  private String readResponse(HttpURLConnection con) throws IOException {
+    try (BufferedReader br = new BufferedReader(
       new InputStreamReader(con.getInputStream(), StandardCharsets.UTF_8))) {
       StringBuilder response = new StringBuilder();
       String line;
@@ -183,7 +227,6 @@ public class InsightClient {
       return response.toString();
     }
   }
-
 
   public static class Builder {
 
@@ -206,8 +249,8 @@ public class InsightClient {
     private void initFromSystemProperties() {
       final String podName = System.getenv("POD_NAME");
       final String podService = podService(podName);
-      this.url = System.getProperty("ebean.insight.url", System.getenv("INSIGHT_URL"));
       this.key = System.getProperty("ebean.insight.key", System.getenv("INSIGHT_KEY"));
+      this.url = System.getProperty("ebean.insight.url", "https://ebean.co");
       this.appName = System.getProperty("app.name", podService);
       this.instanceId = System.getProperty("app.instanceId", podName);
       this.environment = System.getProperty("app.environment", System.getenv("POD_NAMESPACE"));
