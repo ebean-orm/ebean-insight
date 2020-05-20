@@ -6,21 +6,23 @@ import io.ebean.Database;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.UnknownHostException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.zip.GZIPOutputStream;
+
+import static java.net.http.HttpRequest.BodyPublishers.ofByteArray;
+import static java.net.http.HttpResponse.BodyHandlers.ofString;
 
 /**
  * Client that collects Ebean metrics and Avaje metrics for
@@ -35,7 +37,7 @@ public class InsightClient {
   private final String appName;
   private final String instanceId;
   private final String version;
-  private final String ingestUrl;
+  private final URI ingestUri;
   private final String pingUrl;
   private final long periodSecs;
   private final boolean gzip;
@@ -43,15 +45,19 @@ public class InsightClient {
   private final boolean collectAvajeMetrics;
   private final List<Database> databaseList = new ArrayList<>();
   private final Timer timer;
-  private long contentLength;
+  private final HttpClient httpClient;
   private boolean active;
+  private long contentLength;
+  private long latencyMillis;
+  private long collectMicros;
+  private long reportMicros;
 
   public static InsightClient.Builder create() {
     return new InsightClient.Builder();
   }
 
   private InsightClient(Builder builder) {
-    this.ingestUrl = builder.url + "/api/ingest/metrics";
+    this.ingestUri = URI.create(builder.url + "/api/ingest/metrics");
     this.pingUrl = builder.url + "/api/ingest";
     this.key = builder.key;
     this.environment = builder.environment;
@@ -65,7 +71,11 @@ public class InsightClient {
     }
     this.collectEbeanMetrics = builder.collectEbeanMetrics;
     this.collectAvajeMetrics = builder.isCollectAvajeMetrics();
-    this.timer = new Timer("MonitorSend", true);
+    this.timer = new Timer("ebeanInsight", true);
+    this.httpClient = HttpClient.newBuilder()
+      .version(HttpClient.Version.HTTP_1_1)
+      .connectTimeout(Duration.ofSeconds(15))
+      .build();
   }
 
   /**
@@ -90,19 +100,8 @@ public class InsightClient {
     return this;
   }
 
-  /**
-   * Return true if the insight host can be accessed.
-   */
-  boolean ping() {
-    try {
-      return "ok".equals(httpPing());
-    } catch (UnknownHostException e) {
-      log.debug("Ping unsuccessful " + e);
-      return false;
-    } catch (IOException e) {
-      log.debug("Ping unsuccessful " + e, e);
-      return false;
-    }
+  private void processBody(String responseBody) {
+    // process the response commands
   }
 
   private class Task extends TimerTask {
@@ -117,15 +116,15 @@ public class InsightClient {
       long timeStart = System.nanoTime();
       final String json = buildJsonContent();
       long timeCollect = System.nanoTime();
-      final String responseBody = post(json);
+      post(json);
       if (log.isTraceEnabled()) {
-        log.trace("send metrics {} response:{}", json, responseBody);
+        log.trace("send metrics {}", json);
       }
       long timeFinish = System.nanoTime();
+      collectMicros = (timeCollect - timeStart) / 1000;
+      reportMicros = (timeFinish - timeCollect) / 1000;
       if (log.isDebugEnabled()) {
-        long collectMicros = (timeCollect - timeStart) / 1000;
-        long reportMicros = (timeFinish - timeCollect) / 1000;
-        log.debug("metrics reportMicros:{} collect:{} length:{}", reportMicros, collectMicros, contentLength);
+        log.debug("metrics collect:{} report:{} length:{} latency:{}", collectMicros, reportMicros, contentLength, latencyMillis);
       }
 
     } catch (Throwable e) {
@@ -142,8 +141,11 @@ public class InsightClient {
     json.keyVal("appName", appName);
     json.keyVal("instanceId", instanceId);
     json.keyVal("version", version);
-    json.key("eventTime");
-    json.append(System.currentTimeMillis());
+    json.keyVal("eventTime", System.currentTimeMillis());
+    json.keyVal("collect", collectMicros);
+    json.keyVal("report", reportMicros);
+    json.keyVal("latency", latencyMillis);
+
     if (collectAvajeMetrics) {
       addAvajeMetrics(json);
     }
@@ -186,45 +188,51 @@ public class InsightClient {
     return obj.toByteArray();
   }
 
-  private String post(String json) throws IOException {
+  private void post(String json) throws IOException {
     contentLength = json.length();
     byte[] input = gzip ? gzip(json) : json.getBytes(StandardCharsets.UTF_8);
     contentLength = input.length;
-    return httpPost(input, gzip);
+    httpPost(input, gzip);
   }
 
-  private String httpPost(byte[] input, boolean gzipped) throws IOException {
-    URL url = new URL(ingestUrl);
-    HttpURLConnection con = (HttpURLConnection) url.openConnection();
-    con.setRequestMethod("POST");
-    con.setRequestProperty("Content-Type", "application/json; utf-8");
+  private void httpPost(byte[] input, boolean gzipped) throws IOException {
+    final HttpRequest.Builder builder = HttpRequest.newBuilder()
+      .POST(ofByteArray(input))
+      .uri(ingestUri)
+      .setHeader("Content-Type", "application/json; utf-8")
+      .setHeader("Insight-Key", key);
+
     if (gzipped) {
-      con.setRequestProperty("Content-Encoding", "gzip");
+      builder.setHeader("Content-Encoding", "gzip");
     }
-    con.setRequestProperty("Insight-Key", key);
-    con.setDoOutput(true);
-    try (OutputStream os = con.getOutputStream()) {
-      os.write(input, 0, input.length);
-    }
-    return readResponse(con);
+
+    final long latencyStart = System.currentTimeMillis();
+    httpClient.sendAsync(builder.build(), ofString())
+      .thenAccept(res -> {
+        latencyMillis = System.currentTimeMillis() - latencyStart;
+        final int code = res.statusCode();
+        if (code < 300) {
+          processBody(res.body());
+        } else {
+          log.info("Failed to send metrics - response code:{} body:{}", code, res.body());
+        }
+      });
   }
 
-  private String httpPing() throws IOException {
-    URL url = new URL(pingUrl);
-    HttpURLConnection con = (HttpURLConnection) url.openConnection();
-    con.setRequestProperty("Insight-Key", key);
-    return readResponse(con);
-  }
-
-  private String readResponse(HttpURLConnection con) throws IOException {
-    try (BufferedReader br = new BufferedReader(
-      new InputStreamReader(con.getInputStream(), StandardCharsets.UTF_8))) {
-      StringBuilder response = new StringBuilder();
-      String line;
-      while ((line = br.readLine()) != null) {
-        response.append(line.trim());
-      }
-      return response.toString();
+  /**
+   * Return true if the insight host can be accessed.
+   */
+  boolean ping() {
+    try {
+      final HttpRequest req = HttpRequest.newBuilder()
+        .uri(URI.create(pingUrl))
+        .setHeader("Insight-Key", key)
+        .build();
+      final HttpResponse<String> response = httpClient.send(req, ofString());
+      return response.statusCode() < 300 && "ok".equals(response.body());
+    } catch (Exception e) {
+      log.debug("Ping unsuccessful " + e);
+      return false;
     }
   }
 
@@ -389,7 +397,7 @@ public class InsightClient {
    */
   private static class Json {
 
-    private int keyCount;
+    private boolean keyPrefix;
 
     private final StringBuilder buffer;
 
@@ -398,31 +406,37 @@ public class InsightClient {
     }
 
     void key(String key) {
-
-      if (keyCount++ > 0) {
-        buffer.append(",");
-      }
+      preKey();
       str(key);
       buffer.append(":");
     }
 
     void keyVal(String key, String val) {
       if (val != null) {
-        if (keyCount++ > 0) {
-          buffer.append("\n,");
-        }
+        preKey();
         str(key);
         buffer.append(":");
         str(val);
       }
     }
 
-    private void str(String key) {
-      buffer.append("\"").append(key).append("\"");
+    void keyVal(String key, long val) {
+      preKey();
+      str(key);
+      buffer.append(":");
+      buffer.append(val);
     }
 
-    void append(long currentTimeMillis) {
-      buffer.append(currentTimeMillis);
+    private void preKey() {
+      if (keyPrefix) {
+        buffer.append(" ,");
+      } else {
+        keyPrefix = true;
+      }
+    }
+
+    private void str(String key) {
+      buffer.append("\"").append(key).append("\"");
     }
 
     void append(String raw) {
