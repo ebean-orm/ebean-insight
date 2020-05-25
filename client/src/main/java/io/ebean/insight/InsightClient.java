@@ -1,5 +1,6 @@
 package io.ebean.insight;
 
+import io.avaje.config.Config;
 import io.avaje.metrics.MetricManager;
 import io.ebean.DB;
 import io.ebean.Database;
@@ -46,6 +47,7 @@ public class InsightClient {
   private final List<Database> databaseList = new ArrayList<>();
   private final Timer timer;
   private final HttpClient httpClient;
+  private final boolean skipPing;
   private boolean active;
   private long contentLength;
   private long latencyMillis;
@@ -65,6 +67,7 @@ public class InsightClient {
     this.instanceId = builder.instanceId;
     this.version = builder.version;
     this.gzip = builder.gzip;
+    this.skipPing = builder.skipPing;
     this.periodSecs = builder.periodSecs;
     if (!builder.databaseList.isEmpty()) {
       this.databaseList.addAll(builder.databaseList);
@@ -90,7 +93,7 @@ public class InsightClient {
       log.debug("insight not enabled");
       return this;
     }
-    if (ping()) {
+    if (skipPing || ping()) {
       active = true;
       long periodMillis = periodSecs * 1000;
       Date first = new Date(System.currentTimeMillis() + periodMillis);
@@ -246,6 +249,7 @@ public class InsightClient {
     private String version;
     private long periodSecs = 60;
     private boolean gzip = true;
+    private boolean skipPing;
     private boolean collectEbeanMetrics = true;
     private boolean collectAvajeMetrics = true;
     private final List<Database> databaseList = new ArrayList<>();
@@ -257,12 +261,12 @@ public class InsightClient {
     private void initFromSystemProperties() {
       final String podName = System.getenv("POD_NAME");
       final String podService = podService(podName);
-      this.key = System.getProperty("ebean.insight.key", System.getenv("INSIGHT_KEY"));
-      this.url = System.getProperty("ebean.insight.url", "https://ebean.co");
-      this.appName = System.getProperty("app.name", podService);
-      this.instanceId = System.getProperty("app.instanceId", podName);
-      this.environment = System.getProperty("app.environment", System.getenv("POD_NAMESPACE"));
-      this.version = System.getProperty("app.version", System.getenv("POD_VERSION"));
+      this.key = Config.get("ebean.insight.key", System.getenv("INSIGHT_KEY"));
+      this.url = Config.get("ebean.insight.url", "https://ebean.co");
+      this.appName = Config.get("app.name", podService);
+      this.instanceId = Config.get("app.instanceId", podName);
+      this.environment = Config.get("app.environment", System.getenv("POD_NAMESPACE"));
+      this.version = Config.get("app.version", System.getenv("POD_VERSION"));
     }
 
     String podService(String podName) {
@@ -312,6 +316,14 @@ public class InsightClient {
      */
     public Builder gzip(boolean gzip) {
       this.gzip = gzip;
+      return this;
+    }
+
+    /**
+     * Set true to skip ping check on startup.
+     */
+    public Builder skipPing(boolean skipPing) {
+      this.skipPing = skipPing;
       return this;
     }
 
