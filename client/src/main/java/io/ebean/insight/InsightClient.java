@@ -249,20 +249,21 @@ public class InsightClient {
     private String appName;
     private String instanceId;
     private String version;
-    private long periodSecs = 60;
-    private boolean gzip = true;
+    private long periodSecs;
+    private boolean gzip;
     private boolean skipPing;
-    private boolean collectEbeanMetrics = true;
-    private boolean collectAvajeMetrics = true;
+    private boolean collectEbeanMetrics;
+    private boolean collectAvajeMetrics;
     private final List<Database> databaseList = new ArrayList<>();
 
     Builder() {
-      initFromSystemProperties();
-    }
-
-    private void initFromSystemProperties() {
       this.key = Config.get("ebean.insight.key", System.getenv("INSIGHT_KEY"));
       this.url = Config.get("ebean.insight.url", "https://ebean.co");
+      this.periodSecs = Config.getLong("ebean.insight.periodSecs", 60);
+      this.gzip = Config.getBool("ebean.insight.gzip", true);
+      this.skipPing = Config.getBool("ebean.insight.skipPing", false);
+      this.collectEbeanMetrics = Config.getBool("ebean.insight.collectEbeanMetrics", true);
+      this.collectAvajeMetrics = Config.getBool("ebean.insight.collectAvajeMetrics", true);
       this.appName = Config.get("app.name", null);
       this.environment = Config.get("app.environment", null);
       this.instanceId = Config.get("app.instanceId", System.getenv("HOSTNAME"));
