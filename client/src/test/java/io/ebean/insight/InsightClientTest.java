@@ -59,15 +59,6 @@ public class InsightClientTest {
   }
 
   @Test
-  public void podService() {
-
-    InsightClient.Builder builder = InsightClient.create();
-    assertThat(builder.podService("metrics-test-7d6d5bdf8-bsvpl")).isEqualTo("metrics-test");
-    assertThat(builder.podService("a-7d6d5bdf8-bsvpl")).isEqualTo("a");
-    assertThat(builder.podService("7d6d5bdf8-bsvpl")).isNull();
-  }
-
-  @Test
   public void notEnabled_when_keyNotValid() {
 
     // not valid keys

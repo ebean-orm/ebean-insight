@@ -261,24 +261,12 @@ public class InsightClient {
     }
 
     private void initFromSystemProperties() {
-      final String podName = System.getenv("POD_NAME");
-      final String podService = podService(podName);
       this.key = Config.get("ebean.insight.key", System.getenv("INSIGHT_KEY"));
       this.url = Config.get("ebean.insight.url", "https://ebean.co");
-      this.appName = Config.get("app.name", podService);
-      this.instanceId = Config.get("app.instanceId", podName);
-      this.environment = Config.get("app.environment", System.getenv("POD_NAMESPACE"));
-      this.version = Config.get("app.version", System.getenv("POD_VERSION"));
-    }
-
-    String podService(String podName) {
-      if (podName != null && podName.length() > 16) {
-        int p0 = podName.lastIndexOf('-', podName.length() - 16);
-        if (p0 > -1) {
-          return podName.substring(0, p0);
-        }
-      }
-      return null;
+      this.appName = Config.get("app.name", null);
+      this.environment = Config.get("app.environment", null);
+      this.instanceId = Config.get("app.instanceId", System.getenv("HOSTNAME"));
+      this.version = Config.get("app.version", null);
     }
 
     /**
