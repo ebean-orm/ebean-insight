@@ -66,4 +66,32 @@ public class InsightClientTest {
     assertThat(builder.podService("a-7d6d5bdf8-bsvpl")).isEqualTo("a");
     assertThat(builder.podService("7d6d5bdf8-bsvpl")).isNull();
   }
+
+  @Test
+  public void notEnabled_when_keyNotValid() {
+
+    // not valid keys
+    assertThat(InsightClient.create().key(null).enabled()).isFalse();
+    assertThat(InsightClient.create().key("").enabled()).isFalse();
+    assertThat(InsightClient.create().key("  ").enabled()).isFalse();
+    assertThat(InsightClient.create().key("none").enabled()).isFalse();
+
+    // valid
+    assertThat(InsightClient.create().key("foo").enabled()).isTrue();
+  }
+
+  @Test
+  public void notEnabled_when_systemPropertySet() {
+
+    assertThat(InsightClient.create().key("foo").enabled()).isTrue();
+
+    System.setProperty("ebean.insight.enabled", "false");
+    assertThat(InsightClient.create().key("foo").enabled()).isFalse();
+
+    System.setProperty("ebean.insight.enabled", "true");
+    assertThat(InsightClient.create().key("foo").enabled()).isTrue();
+
+    System.clearProperty("ebean.insight.enabled");
+    assertThat(InsightClient.create().key("foo").enabled()).isTrue();
+  }
 }

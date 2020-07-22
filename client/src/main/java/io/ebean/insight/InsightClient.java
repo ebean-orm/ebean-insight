@@ -33,6 +33,7 @@ public class InsightClient {
 
   private static final Logger log = LoggerFactory.getLogger(InsightClient.class);
 
+  private final boolean enabled;
   private final String key;
   private final String environment;
   private final String appName;
@@ -59,6 +60,7 @@ public class InsightClient {
   }
 
   private InsightClient(Builder builder) {
+    this.enabled = builder.enabled();
     this.ingestUri = URI.create(builder.url + "/api/ingest/metrics");
     this.pingUrl = builder.url + "/api/ingest";
     this.key = builder.key;
@@ -89,7 +91,7 @@ public class InsightClient {
   }
 
   InsightClient start() {
-    if (key == null || key.trim().length() == 0) {
+    if (!enabled) {
       log.debug("insight not enabled");
       return this;
     }
@@ -198,7 +200,7 @@ public class InsightClient {
     httpPost(input, gzip);
   }
 
-  private void httpPost(byte[] input, boolean gzipped) throws IOException {
+  private void httpPost(byte[] input, boolean gzipped) {
     final HttpRequest.Builder builder = HttpRequest.newBuilder()
       .POST(ofByteArray(input))
       .uri(ingestUri)
@@ -377,6 +379,17 @@ public class InsightClient {
     public Builder collectAvajeMetrics(boolean collectAvajeMetrics) {
       this.collectAvajeMetrics = collectAvajeMetrics;
       return this;
+    }
+
+    /**
+     * Not enabled if no valid key provided or explicitly disabled via property.
+     */
+    boolean enabled() {
+      return validKey() && Config.getBool("ebean.insight.enabled", true);
+    }
+
+    private boolean validKey() {
+      return key != null && key.trim().length() > 0 && !"none".equalsIgnoreCase(key);
     }
 
     /**
