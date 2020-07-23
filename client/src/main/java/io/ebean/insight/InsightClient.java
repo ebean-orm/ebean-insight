@@ -48,7 +48,7 @@ public class InsightClient {
   private final List<Database> databaseList = new ArrayList<>();
   private final Timer timer;
   private final HttpClient httpClient;
-  private final boolean skipPing;
+  private final boolean ping;
   private boolean active;
   private long contentLength;
   private long latencyMillis;
@@ -69,7 +69,7 @@ public class InsightClient {
     this.instanceId = builder.instanceId;
     this.version = builder.version;
     this.gzip = builder.gzip;
-    this.skipPing = builder.skipPing;
+    this.ping = builder.ping;
     this.periodSecs = builder.periodSecs;
     if (!builder.databaseList.isEmpty()) {
       this.databaseList.addAll(builder.databaseList);
@@ -95,7 +95,7 @@ public class InsightClient {
       log.debug("insight not enabled");
       return this;
     }
-    if (skipPing || ping()) {
+    if (!ping || ping()) {
       active = true;
       long periodMillis = periodSecs * 1000;
       Date first = new Date(System.currentTimeMillis() + periodMillis);
@@ -243,6 +243,7 @@ public class InsightClient {
 
   public static class Builder {
 
+    private boolean enabled;
     private String url;
     private String key;
     private String environment;
@@ -251,17 +252,18 @@ public class InsightClient {
     private String version;
     private long periodSecs;
     private boolean gzip;
-    private boolean skipPing;
+    private boolean ping;
     private boolean collectEbeanMetrics;
     private boolean collectAvajeMetrics;
     private final List<Database> databaseList = new ArrayList<>();
 
     Builder() {
+      this.enabled = Config.getBool("ebean.insight.enabled", true);
       this.key = Config.get("ebean.insight.key", System.getenv("INSIGHT_KEY"));
       this.url = Config.get("ebean.insight.url", "https://ebean.co");
       this.periodSecs = Config.getLong("ebean.insight.periodSecs", 60);
       this.gzip = Config.getBool("ebean.insight.gzip", true);
-      this.skipPing = Config.getBool("ebean.insight.skipPing", false);
+      this.ping = Config.getBool("ebean.insight.ping", false);
       this.collectEbeanMetrics = Config.getBool("ebean.insight.collectEbeanMetrics", true);
       this.collectAvajeMetrics = Config.getBool("ebean.insight.collectAvajeMetrics", true);
       this.appName = Config.get("app.name", null);
@@ -313,8 +315,8 @@ public class InsightClient {
     /**
      * Set true to skip ping check on startup.
      */
-    public Builder skipPing(boolean skipPing) {
-      this.skipPing = skipPing;
+    public Builder ping(boolean ping) {
+      this.ping = ping;
       return this;
     }
 
@@ -371,10 +373,18 @@ public class InsightClient {
     }
 
     /**
+     * Set if metrics collection is enabled or not.
+     */
+    public Builder enabled(boolean enabled) {
+      this.enabled = enabled;
+      return this;
+    }
+
+    /**
      * Not enabled if no valid key provided or explicitly disabled via property.
      */
     boolean enabled() {
-      return validKey() && Config.getBool("ebean.insight.enabled", true);
+      return enabled && validKey();
     }
 
     private boolean validKey() {

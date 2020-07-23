@@ -85,4 +85,11 @@ public class InsightClientTest {
     System.clearProperty("ebean.insight.enabled");
     assertThat(InsightClient.create().key("foo").enabled()).isTrue();
   }
+
+  @Test
+  public void enabled() {
+    assertThat(InsightClient.create().key("foo").enabled(true).enabled()).isTrue();
+    assertThat(InsightClient.create().key("foo").enabled(false).enabled()).isFalse();
+    assertThat(InsightClient.create().key("foo").enabled()).isTrue();
+  }
 }
