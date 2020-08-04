@@ -48,6 +48,7 @@ public class InsightClient {
   private final List<Database> databaseList = new ArrayList<>();
   private final Timer timer;
   private final HttpClient httpClient;
+  private final int timeoutSecs;
   private final boolean ping;
   private boolean active;
   private long contentLength;
@@ -70,6 +71,7 @@ public class InsightClient {
     this.version = builder.version;
     this.gzip = builder.gzip;
     this.ping = builder.ping;
+    this.timeoutSecs = builder.timeoutSecs;
     this.periodSecs = builder.periodSecs;
     if (!builder.databaseList.isEmpty()) {
       this.databaseList.addAll(builder.databaseList);
@@ -202,6 +204,7 @@ public class InsightClient {
 
   private void httpPost(byte[] input, boolean gzipped) {
     final HttpRequest.Builder builder = HttpRequest.newBuilder()
+      .timeout(Duration.ofSeconds(timeoutSecs))
       .POST(ofByteArray(input))
       .uri(ingestUri)
       .setHeader("Content-Type", "application/json; utf-8")
@@ -230,6 +233,7 @@ public class InsightClient {
   boolean ping() {
     try {
       final HttpRequest req = HttpRequest.newBuilder()
+        .timeout(Duration.ofSeconds(timeoutSecs))
         .uri(URI.create(pingUrl))
         .setHeader("Insight-Key", key)
         .build();
@@ -250,6 +254,7 @@ public class InsightClient {
     private String appName;
     private String instanceId;
     private String version;
+    private int timeoutSecs;
     private long periodSecs;
     private boolean gzip;
     private boolean ping;
@@ -262,6 +267,7 @@ public class InsightClient {
       this.key = Config.get("ebean.insight.key", System.getenv("INSIGHT_KEY"));
       this.url = Config.get("ebean.insight.url", "https://ebean.co");
       this.periodSecs = Config.getLong("ebean.insight.periodSecs", 60);
+      this.timeoutSecs = Config.getInt("ebean.insight.timeoutSecs", 15);
       this.gzip = Config.getBool("ebean.insight.gzip", true);
       this.ping = Config.getBool("ebean.insight.ping", false);
       this.collectEbeanMetrics = Config.getBool("ebean.insight.collectEbeanMetrics", true);
@@ -317,6 +323,14 @@ public class InsightClient {
      */
     public Builder ping(boolean ping) {
       this.ping = ping;
+      return this;
+    }
+
+    /**
+     * Set request timeout in seconds. Default timeout when unset is 15 secs.
+     */
+    public Builder timeoutSecs(int timeoutSecs) {
+      this.timeoutSecs = timeoutSecs;
       return this;
     }
 

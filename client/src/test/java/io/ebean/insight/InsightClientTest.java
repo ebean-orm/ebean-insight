@@ -26,12 +26,13 @@ public class InsightClientTest {
       .environment("local")
       .instanceId("1")
       .key("YeahNah")
-      //.gzip(false)
+      .ping(false)
+      .gzip(false)
+      .timeoutSecs(10)
       .collectEbeanMetrics(false)
       .build();
 
     assertTrue(client.isActive());
-
     Thread.sleep(40_000);
   }
 
@@ -49,6 +50,7 @@ public class InsightClientTest {
       .environment("local")
       .instanceId("1")
       .key("YeahNah")
+      .timeoutSecs(10)
       .collectEbeanMetrics(false)
       .build();
 
