@@ -196,7 +196,6 @@ public class InsightClient {
   }
 
   private void post(String json) throws IOException {
-    contentLength = json.length();
     byte[] input = gzip ? gzip(json) : json.getBytes(StandardCharsets.UTF_8);
     contentLength = input.length;
     httpPost(input, gzip);
