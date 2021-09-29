@@ -1,17 +1,18 @@
 package io.ebean.insight;
 
 
+import io.avaje.config.Config;
 import io.avaje.metrics.MetricManager;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class InsightClientTest {
 
-  @Ignore
+  @Disabled
   @Test
   public void create() throws InterruptedException {
 
@@ -36,7 +37,7 @@ public class InsightClientTest {
     Thread.sleep(40_000);
   }
 
-  @Ignore
+  @Disabled
   @Test
   public void pingFailed_expect_notStarted() throws InterruptedException {
 
@@ -78,13 +79,10 @@ public class InsightClientTest {
 
     assertThat(InsightClient.create().key("foo").enabled()).isTrue();
 
-    System.setProperty("ebean.insight.enabled", "false");
+    Config.setProperty("ebean.insight.enabled", "false");
     assertThat(InsightClient.create().key("foo").enabled()).isFalse();
 
-    System.setProperty("ebean.insight.enabled", "true");
-    assertThat(InsightClient.create().key("foo").enabled()).isTrue();
-
-    System.clearProperty("ebean.insight.enabled");
+    Config.setProperty("ebean.insight.enabled", "true");
     assertThat(InsightClient.create().key("foo").enabled()).isTrue();
   }
 
