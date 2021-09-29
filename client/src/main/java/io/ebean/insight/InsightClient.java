@@ -175,13 +175,13 @@ public class InsightClient {
     json.append("[");
     if (databaseList.isEmpty()) {
       // metrics from the default database
-      DB.getDefault().getMetaInfoManager().collectMetricsAsJson().write(json.buffer);
+      DB.getDefault().metaInfo().collectMetricsAsJson().write(json.buffer);
     } else {
       for (int i = 0; i < databaseList.size(); i++) {
         if (i > 0) {
           json.buffer.append(",\n");
         }
-        databaseList.get(i).getMetaInfoManager().collectMetricsAsJson().write(json.buffer);
+        databaseList.get(i).metaInfo().collectMetricsAsJson().write(json.buffer);
       }
     }
     json.append("]");
