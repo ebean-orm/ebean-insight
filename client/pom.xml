@@ -17,19 +17,24 @@
     <tag>HEAD</tag>
   </scm>
 
-  <dependencies>
+  <properties>
+    <surefire.useModulePath>false</surefire.useModulePath>
+  </properties>
 
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-api</artifactId>
-      <version>1.7.32</version>
-    </dependency>
+  <dependencies>
 
     <dependency>
       <groupId>io.ebean</groupId>
       <artifactId>ebean</artifactId>
       <version>13.0.0</version>
       <optional>true</optional>
+    </dependency>
+
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>1.7.32</version>
+      <scope>provided</scope> <!-- still needed to compile with module-path due to ebean -->
     </dependency>
 
     <dependency>
