@@ -444,14 +444,14 @@ public class InsightClient {
     void key(String key) {
       preKey();
       str(key);
-      buffer.append(":");
+      buffer.append(':');
     }
 
     void keyVal(String key, String val) {
       if (val != null) {
         preKey();
         str(key);
-        buffer.append(":");
+        buffer.append(':');
         str(val);
       }
     }
@@ -459,7 +459,7 @@ public class InsightClient {
     void keyVal(String key, long val) {
       preKey();
       str(key);
-      buffer.append(":");
+      buffer.append(':');
       buffer.append(val);
     }
 
@@ -472,7 +472,7 @@ public class InsightClient {
     }
 
     private void str(String key) {
-      buffer.append("\"").append(key).append("\"");
+      buffer.append('"').append(key).append('"');
     }
 
     void append(String raw) {

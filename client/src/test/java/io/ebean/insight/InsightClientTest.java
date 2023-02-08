@@ -10,11 +10,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class InsightClientTest {
+class InsightClientTest {
 
   @Disabled
   @Test
-  public void create() throws InterruptedException {
+  void create() throws InterruptedException {
 
     MetricManager.jvmMetrics()
       .registerJvmMetrics()
@@ -39,7 +39,7 @@ public class InsightClientTest {
 
   @Disabled
   @Test
-  public void pingFailed_expect_notStarted() throws InterruptedException {
+  void pingFailed_expect_notStarted() throws InterruptedException {
 
     MetricManager.jvmMetrics()
       .registerJvmMetrics();
@@ -62,7 +62,7 @@ public class InsightClientTest {
   }
 
   @Test
-  public void notEnabled_when_keyNotValid() {
+  void notEnabled_when_keyNotValid() {
 
     // not valid keys
     assertThat(InsightClient.create().key(null).enabled()).isFalse();
@@ -75,8 +75,7 @@ public class InsightClientTest {
   }
 
   @Test
-  public void notEnabled_when_systemPropertySet() {
-
+  void notEnabled_when_systemPropertySet() {
     assertThat(InsightClient.create().key("foo").enabled()).isTrue();
 
     Config.setProperty("ebean.insight.enabled", "false");
@@ -87,9 +86,22 @@ public class InsightClientTest {
   }
 
   @Test
-  public void enabled() {
+  void enabled() {
     assertThat(InsightClient.create().key("foo").enabled(true).enabled()).isTrue();
     assertThat(InsightClient.create().key("foo").enabled(false).enabled()).isFalse();
     assertThat(InsightClient.create().key("foo").enabled()).isTrue();
+  }
+
+  @Test
+  void buildJsonContent() {
+    InsightClient client = InsightClient.create()
+      .collectEbeanMetrics(false)
+      .collectAvajeMetrics(false)
+      .build();
+    String jsonContent = client.buildJsonContent();
+
+    assertThat(jsonContent).contains("{\"eventTime\":");
+    assertThat(jsonContent).contains(" ,\"collect\":");
+    assertThat(jsonContent).doesNotContain(" ,\"metrics\":[");
   }
 }
