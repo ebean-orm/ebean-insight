@@ -23,6 +23,16 @@ import static java.net.http.HttpResponse.BodyHandlers.ofString;
 /**
  * Client that collects Ebean metrics and Avaje metrics for
  * sending to the monitoring service.
+ *
+ * <pre>{@code
+ *
+ *   final InsightClient client = InsightClient.builder()
+ *       .appName("myapp")
+ *       .environment("dev")
+ *       .key("YeahNah")
+ *       .build();
+ *
+ * }</pre>
  */
 public class InsightClient {
 
@@ -51,8 +61,29 @@ public class InsightClient {
   private long collectMicros;
   private long reportMicros;
 
-  public static InsightClient.Builder create() {
+  /**
+   * Create a new builder for InsightClient.
+   *
+   * <pre>{@code
+   *
+   *   final InsightClient client = InsightClient.builder()
+   *       .appName("myapp")
+   *       .environment("dev")
+   *       .key("YeahNah")
+   *       .build();
+   *
+   * }</pre>
+   */
+  public static InsightClient.Builder builder() {
     return new InsightClient.Builder();
+  }
+
+  /**
+   * Deprecated - migrate to {@link #builder()}
+   */
+  @Deprecated
+  public static InsightClient.Builder create() {
+    return builder();
   }
 
   private InsightClient(Builder builder) {

@@ -20,7 +20,7 @@ class InsightClientTest {
       .registerJvmMetrics()
       .registerLogbackMetrics();
 
-    final InsightClient client = InsightClient.create()
+    final InsightClient client = InsightClient.builder()
       //.url("http://localhost:8090")
       .periodSecs(5)
       .appName("test")
@@ -44,7 +44,7 @@ class InsightClientTest {
     MetricManager.jvmMetrics()
       .registerJvmMetrics();
 
-    final InsightClient client = InsightClient.create()
+    final InsightClient client = InsightClient.builder()
       .url("http://doesNotExist:8090")
       .periodSecs(1)
       .appName("test")
@@ -65,36 +65,36 @@ class InsightClientTest {
   void notEnabled_when_keyNotValid() {
 
     // not valid keys
-    assertThat(InsightClient.create().key(null).enabled()).isFalse();
-    assertThat(InsightClient.create().key("").enabled()).isFalse();
-    assertThat(InsightClient.create().key("  ").enabled()).isFalse();
-    assertThat(InsightClient.create().key("none").enabled()).isFalse();
+    assertThat(InsightClient.builder().key(null).enabled()).isFalse();
+    assertThat(InsightClient.builder().key("").enabled()).isFalse();
+    assertThat(InsightClient.builder().key("  ").enabled()).isFalse();
+    assertThat(InsightClient.builder().key("none").enabled()).isFalse();
 
     // valid
-    assertThat(InsightClient.create().key("foo").enabled()).isTrue();
+    assertThat(InsightClient.builder().key("foo").enabled()).isTrue();
   }
 
   @Test
   void notEnabled_when_systemPropertySet() {
-    assertThat(InsightClient.create().key("foo").enabled()).isTrue();
+    assertThat(InsightClient.builder().key("foo").enabled()).isTrue();
 
     Config.setProperty("ebean.insight.enabled", "false");
-    assertThat(InsightClient.create().key("foo").enabled()).isFalse();
+    assertThat(InsightClient.builder().key("foo").enabled()).isFalse();
 
     Config.setProperty("ebean.insight.enabled", "true");
-    assertThat(InsightClient.create().key("foo").enabled()).isTrue();
+    assertThat(InsightClient.builder().key("foo").enabled()).isTrue();
   }
 
   @Test
   void enabled() {
-    assertThat(InsightClient.create().key("foo").enabled(true).enabled()).isTrue();
-    assertThat(InsightClient.create().key("foo").enabled(false).enabled()).isFalse();
-    assertThat(InsightClient.create().key("foo").enabled()).isTrue();
+    assertThat(InsightClient.builder().key("foo").enabled(true).enabled()).isTrue();
+    assertThat(InsightClient.builder().key("foo").enabled(false).enabled()).isFalse();
+    assertThat(InsightClient.builder().key("foo").enabled()).isTrue();
   }
 
   @Test
   void buildJsonContent() {
-    InsightClient client = InsightClient.create()
+    InsightClient client = InsightClient.builder()
       .collectEbeanMetrics(false)
       .collectAvajeMetrics(false)
       .build();
