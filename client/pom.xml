@@ -9,11 +9,11 @@
 
   <groupId>io.ebean</groupId>
   <artifactId>ebean-insight</artifactId>
-  <version>1.2</version>
+  <version>1.3-SNAPSHOT</version>
 
   <scm>
     <developerConnection>scm:git:git@github.com:ebean-orm/ebean-insight.git</developerConnection>
-    <tag>ebean-insight-1.2</tag>
+    <tag>HEAD</tag>
   </scm>
 
   <properties>
