@@ -7,20 +7,16 @@ import io.ebean.Database;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.lang.System.Logger.Level;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.*;
 import java.util.zip.GZIPOutputStream;
 
+import static java.lang.System.Logger.Level.*;
 import static java.net.http.HttpRequest.BodyPublishers.ofByteArray;
 import static java.net.http.HttpResponse.BodyHandlers.ofString;
 
@@ -93,7 +89,7 @@ public class InsightClient {
 
   InsightClient start() {
     if (!enabled) {
-      log.log(Level.DEBUG, "insight not enabled");
+      log.log(DEBUG, "insight not enabled");
       return this;
     }
     if (!ping || ping()) {
@@ -101,7 +97,7 @@ public class InsightClient {
       long periodMillis = periodSecs * 1000;
       Date first = new Date(System.currentTimeMillis() + periodMillis);
       timer.schedule(new Task(), first, periodMillis);
-      log.log(Level.INFO,"insight enabled");
+      log.log(INFO, "insight enabled");
     }
     return this;
   }
@@ -123,18 +119,18 @@ public class InsightClient {
       final String json = buildJsonContent();
       long timeCollect = System.nanoTime();
       post(json);
-      if (log.isLoggable(Level.TRACE)) {
-        log.log(Level.TRACE, "send metrics {0}", json);
+      if (log.isLoggable(TRACE)) {
+        log.log(TRACE, "send metrics {0}", json);
       }
       long timeFinish = System.nanoTime();
       collectMicros = (timeCollect - timeStart) / 1000;
       reportMicros = (timeFinish - timeCollect) / 1000;
-      if (log.isLoggable(Level.DEBUG)) {
-        log.log(Level.DEBUG, "metrics collect:{0} report:{1} length:{2} latency:{3}", collectMicros, reportMicros, contentLength, latencyMillis);
+      if (log.isLoggable(DEBUG)) {
+        log.log(DEBUG, "metrics collect:{0} report:{1} length:{2} latency:{3}", collectMicros, reportMicros, contentLength, latencyMillis);
       }
 
     } catch (Throwable e) {
-      log.log(Level.WARNING, "Error reporting metrics", e);
+      log.log(WARNING, "Error reporting metrics", e);
     }
   }
 
@@ -220,7 +216,7 @@ public class InsightClient {
         if (code < 300) {
           processBody(res.body());
         } else {
-          log.log(Level.INFO, "Failed to send metrics - response code:{0} body:{1}", code, res.body());
+          log.log(INFO, "Failed to send metrics - response code:{0} body:{1}", code, res.body());
         }
       });
   }
@@ -238,7 +234,7 @@ public class InsightClient {
       final HttpResponse<String> response = httpClient.send(req, ofString());
       return response.statusCode() < 300 && "ok".equals(response.body());
     } catch (Exception e) {
-      log.log(Level.DEBUG, "Ping unsuccessful {0}", e.toString());
+      log.log(DEBUG, "Ping unsuccessful {0}", e.toString());
       return false;
     }
   }
