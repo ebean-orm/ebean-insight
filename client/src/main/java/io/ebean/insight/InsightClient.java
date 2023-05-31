@@ -289,7 +289,7 @@ public class InsightClient {
 
     Builder() {
       this.enabled = Config.getBool("ebean.insight.enabled", true);
-      this.key = Config.get("ebean.insight.key", System.getenv("INSIGHT_KEY"));
+      this.key = Config.get("ebean.insight.key", "hi");
       this.url = Config.get("ebean.insight.url", "https://ebean.co");
       this.periodSecs = Config.getLong("ebean.insight.periodSecs", 60);
       this.timeoutSecs = Config.getInt("ebean.insight.timeoutSecs", 15);
@@ -297,10 +297,10 @@ public class InsightClient {
       this.ping = Config.getBool("ebean.insight.ping", false);
       this.collectEbeanMetrics = Config.getBool("ebean.insight.collectEbeanMetrics", true);
       this.collectAvajeMetrics = Config.getBool("ebean.insight.collectAvajeMetrics", true);
-      this.appName = Config.get("app.name", null);
-      this.environment = Config.get("app.environment", null);
-      this.instanceId = Config.get("app.instanceId", System.getenv("HOSTNAME"));
-      this.version = Config.get("app.version", null);
+      this.appName = Config.getNullable("app.name");
+      this.environment = Config.getNullable("app.environment");
+      this.instanceId = Config.getNullable("app.instanceId", System.getenv("HOSTNAME"));
+      this.version = Config.getNullable("app.version");
     }
 
     /**
