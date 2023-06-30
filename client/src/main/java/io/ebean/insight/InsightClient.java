@@ -1,7 +1,7 @@
 package io.ebean.insight;
 
 import io.avaje.config.Config;
-import io.avaje.metrics.MetricManager;
+import io.avaje.metrics.Metrics;
 import io.ebean.DB;
 import io.ebean.Database;
 
@@ -192,7 +192,7 @@ public class InsightClient {
   private void addAvajeMetrics(Json json) {
     json.key("metrics");
     json.append("[");
-    MetricManager.collectAsJson().write(json.buffer);
+    Metrics.collectAsJson().write(json.buffer);
     json.append("]");
   }
 
@@ -201,13 +201,13 @@ public class InsightClient {
     json.append("[");
     if (databaseList.isEmpty()) {
       // metrics from the default database
-      DB.getDefault().metaInfo().collectMetricsAsJson().write(json.buffer);
+      DB.getDefault().metaInfo().collectMetrics().asJson().write(json.buffer);
     } else {
       for (int i = 0; i < databaseList.size(); i++) {
         if (i > 0) {
           json.buffer.append(",\n");
         }
-        databaseList.get(i).metaInfo().collectMetricsAsJson().write(json.buffer);
+        databaseList.get(i).metaInfo().collectMetrics().asJson().write(json.buffer);
       }
     }
     json.append("]");

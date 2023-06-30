@@ -2,7 +2,7 @@ package io.ebean.insight;
 
 
 import io.avaje.config.Config;
-import io.avaje.metrics.MetricManager;
+import io.avaje.metrics.Metrics;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -16,9 +16,7 @@ class InsightClientTest {
   @Test
   void create() throws InterruptedException {
 
-    MetricManager.jvmMetrics()
-      .registerJvmMetrics()
-      .registerLogbackMetrics();
+    Metrics.jvmMetrics().registerJvmMetrics();
 
     final InsightClient client = InsightClient.builder()
       //.url("http://localhost:8090")
@@ -41,8 +39,7 @@ class InsightClientTest {
   @Test
   void pingFailed_expect_notStarted() throws InterruptedException {
 
-    MetricManager.jvmMetrics()
-      .registerJvmMetrics();
+    Metrics.jvmMetrics().registerJvmMetrics();
 
     final InsightClient client = InsightClient.builder()
       .url("http://doesNotExist:8090")
