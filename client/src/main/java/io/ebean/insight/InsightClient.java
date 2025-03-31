@@ -1,9 +1,10 @@
 package io.ebean.insight;
 
+import io.avaje.applog.AppLog;
 import io.avaje.config.Config;
 import io.avaje.metrics.Metrics;
-import io.ebean.DB;
 import io.ebean.Database;
+import io.ebean.meta.MetaQueryPlan;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -27,8 +28,10 @@ import static java.net.http.HttpResponse.BodyHandlers.ofString;
  * <pre>{@code
  *
  *   final InsightClient client = InsightClient.builder()
+ *       .url("http://my-ebean-insight-host")
  *       .appName("myapp")
  *       .environment("dev")
+ *       .database(myDatabase)
  *       .key("YeahNah")
  *       .build();
  *
@@ -36,7 +39,7 @@ import static java.net.http.HttpResponse.BodyHandlers.ofString;
  */
 public class InsightClient {
 
-  private static final System.Logger log = System.getLogger("io.ebean");
+  static final System.Logger log = AppLog.getLogger("io.ebean.Insight");
 
   private final boolean enabled;
   private final String key;
@@ -45,6 +48,7 @@ public class InsightClient {
   private final String instanceId;
   private final String version;
   private final URI ingestUri;
+  private final URI ingestPlansUri;
   private final String pingUrl;
   private final long periodSecs;
   private final boolean gzip;
@@ -53,10 +57,11 @@ public class InsightClient {
   private final List<Database> databaseList = new ArrayList<>();
   private final Timer timer;
   private final HttpClient httpClient;
+  private final QueryPlanCapture planCapture;
   private final int timeoutSecs;
   private final boolean ping;
   private boolean active;
-  private long contentLength;
+
   private long latencyMillis;
   private long collectMicros;
   private long reportMicros;
@@ -67,8 +72,10 @@ public class InsightClient {
    * <pre>{@code
    *
    *   final InsightClient client = InsightClient.builder()
+   *       .url("http://my-ebean-insight-host")
    *       .appName("myapp")
    *       .environment("dev")
+   *       .database(myDatabase)
    *       .key("YeahNah")
    *       .build();
    *
@@ -78,17 +85,10 @@ public class InsightClient {
     return new InsightClient.Builder();
   }
 
-  /**
-   * Deprecated - migrate to {@link #builder()}
-   */
-  @Deprecated
-  public static InsightClient.Builder create() {
-    return builder();
-  }
-
   private InsightClient(Builder builder) {
     this.enabled = builder.enabled();
     this.ingestUri = URI.create(builder.url + "/api/ingest/metrics");
+    this.ingestPlansUri = URI.create(builder.url + "/api/ingest/plans");
     this.pingUrl = builder.url + "/api/ingest";
     this.key = builder.key;
     this.environment = builder.environment;
@@ -109,6 +109,12 @@ public class InsightClient {
       .version(HttpClient.Version.HTTP_1_1)
       .connectTimeout(Duration.ofSeconds(15))
       .build();
+
+    if (builder.capturePlans() && !databaseList.isEmpty()) {
+      planCapture = new QueryPlanCapture(databaseList.get(0), this, 10);
+    } else {
+      planCapture = null;
+    }
   }
 
   /**
@@ -128,13 +134,20 @@ public class InsightClient {
       long periodMillis = periodSecs * 1000;
       Date first = new Date(System.currentTimeMillis() + periodMillis);
       timer.schedule(new Task(), first, periodMillis);
+      if (planCapture != null) {
+        planCapture.start();
+      }
       log.log(INFO, "insight enabled");
     }
     return this;
   }
 
   private void processBody(String responseBody) {
-    // process the response commands
+    if (planCapture != null) {
+      if (responseBody != null && !responseBody.isEmpty()) {
+        planCapture.process(responseBody);
+      }
+    }
   }
 
   private class Task extends TimerTask {
@@ -149,7 +162,7 @@ public class InsightClient {
       long timeStart = System.nanoTime();
       final String json = buildJsonContent();
       long timeCollect = System.nanoTime();
-      post(json);
+      long contentLength = post(ingestUri, json);
       if (log.isLoggable(TRACE)) {
         log.log(TRACE, "send metrics {0}", json);
       }
@@ -165,9 +178,41 @@ public class InsightClient {
     }
   }
 
-  String buildJsonContent() {
+  void sendPlans(List<MetaQueryPlan> plans) {
+    try {
+      post(ingestPlansUri, buildPlansJson(plans));
+    } catch (Throwable e) {
+      log.log(WARNING, "Error reporting query plans", e);
+    }
+  }
 
-    Json json = new Json();
+  private String buildPlansJson(List<MetaQueryPlan> plans) {
+    JsonSimple json = new JsonSimple();
+    json.begin('{');
+    json.keyVal("environment", environment);
+    json.keyVal("appName", appName);
+    json.key("plans");
+    json.begin('[');
+    for (MetaQueryPlan metaQueryPlan : plans) {
+      json.begin('{');
+      json.keyVal("hash", metaQueryPlan.hash());
+      json.keyVal("whenCaptured", metaQueryPlan.whenCaptured().toString());
+      json.keyVal("label", metaQueryPlan.label());
+      json.keyVal("queryTimeMicros",metaQueryPlan.queryTimeMicros());
+      json.keyVal("captureMicros", metaQueryPlan.captureMicros());
+      json.keyVal("captureCount", metaQueryPlan.captureCount());
+      json.keyValEscape("bind", metaQueryPlan.bind());
+      json.keyValEscape("plan", metaQueryPlan.plan());
+      json.keyValEscape("sql", metaQueryPlan.sql());
+      json.end('}');
+    }
+    json.end(']');
+    json.end('}');
+    return json.toString();
+  }
+
+  String buildJsonContent() {
+    JsonSimple json = new JsonSimple();
 
     json.append("{");
     json.keyVal("environment", environment);
@@ -189,28 +234,26 @@ public class InsightClient {
     return json.asJson();
   }
 
-  private void addAvajeMetrics(Json json) {
+  private void addAvajeMetrics(JsonSimple json) {
     json.key("metrics");
     json.append("[");
-    Metrics.collectAsJson().write(json.buffer);
+    Metrics.collectAsJson().write(json.buffer());
     json.append("]");
   }
 
-  private void addDatabaseMetrics(InsightClient.Json json) {
-    json.key("dbs");
-    json.append("[");
+  private void addDatabaseMetrics(JsonSimple json) {
     if (databaseList.isEmpty()) {
-      // metrics from the default database
-      DB.getDefault().metaInfo().collectMetrics().asJson().write(json.buffer);
-    } else {
-      for (int i = 0; i < databaseList.size(); i++) {
-        if (i > 0) {
-          json.buffer.append(",\n");
-        }
-        databaseList.get(i).metaInfo().collectMetrics().asJson().write(json.buffer);
-      }
+      return;
     }
-    json.append("]");
+    json.key("dbs");
+    json.append('[');
+    for (int i = 0; i < databaseList.size(); i++) {
+      if (i > 0) {
+        json.buffer().append(',');
+      }
+      databaseList.get(i).metaInfo().collectMetrics().asJson().write(json.buffer());
+    }
+    json.append(']');
   }
 
   static byte[] gzip(String str) throws IOException {
@@ -221,17 +264,17 @@ public class InsightClient {
     return obj.toByteArray();
   }
 
-  private void post(String json) throws IOException {
+  private long post(URI uri, String json) throws IOException {
     byte[] input = gzip ? gzip(json) : json.getBytes(StandardCharsets.UTF_8);
-    contentLength = input.length;
-    httpPost(input, gzip);
+    httpPost(uri, input, gzip);
+    return input.length;
   }
 
-  private void httpPost(byte[] input, boolean gzipped) {
+  private void httpPost(URI uri, byte[] input, boolean gzipped) {
     final HttpRequest.Builder builder = HttpRequest.newBuilder()
       .timeout(Duration.ofSeconds(timeoutSecs))
       .POST(ofByteArray(input))
-      .uri(ingestUri)
+      .uri(uri)
       .setHeader("Content-Type", "application/json; utf-8")
       .setHeader("Insight-Key", key);
 
@@ -273,6 +316,7 @@ public class InsightClient {
   public static class Builder {
 
     private boolean enabled;
+    private boolean capturePlans;
     private String url;
     private String key;
     private String environment;
@@ -420,10 +464,22 @@ public class InsightClient {
     }
 
     /**
+     * Set if query plan capture is enabled.
+     */
+    public Builder capturePlans(boolean capturePlans) {
+      this.capturePlans = capturePlans;
+      return this;
+    }
+
+    /**
      * Not enabled if no valid key provided or explicitly disabled via property.
      */
     boolean enabled() {
       return enabled && validKey();
+    }
+
+    boolean capturePlans() {
+      return capturePlans;
     }
 
     private boolean validKey() {
@@ -455,59 +511,4 @@ public class InsightClient {
     }
   }
 
-  /**
-   * Internal helper to write json content.
-   */
-  private static class Json {
-
-    private boolean keyPrefix;
-
-    private final StringBuilder buffer;
-
-    private Json() {
-      this.buffer = new StringBuilder(1000);
-    }
-
-    void key(String key) {
-      preKey();
-      str(key);
-      buffer.append(':');
-    }
-
-    void keyVal(String key, String val) {
-      if (val != null) {
-        preKey();
-        str(key);
-        buffer.append(':');
-        str(val);
-      }
-    }
-
-    void keyVal(String key, long val) {
-      preKey();
-      str(key);
-      buffer.append(':');
-      buffer.append(val);
-    }
-
-    private void preKey() {
-      if (keyPrefix) {
-        buffer.append(" ,");
-      } else {
-        keyPrefix = true;
-      }
-    }
-
-    private void str(String key) {
-      buffer.append('"').append(key).append('"');
-    }
-
-    void append(String raw) {
-      buffer.append(raw);
-    }
-
-    String asJson() {
-      return buffer.toString();
-    }
-  }
 }
