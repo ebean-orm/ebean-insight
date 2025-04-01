@@ -186,14 +186,18 @@ public class InsightClient {
     }
   }
 
-  private String buildPlansJson(List<MetaQueryPlan> plans) {
+  String buildPlansJson(List<MetaQueryPlan> plans) {
     JsonSimple json = new JsonSimple();
     json.begin('{');
     json.keyVal("environment", environment);
     json.keyVal("appName", appName);
     json.key("plans");
     json.begin('[');
-    for (MetaQueryPlan metaQueryPlan : plans) {
+    for (int i = 0; i < plans.size(); i++) {
+      MetaQueryPlan metaQueryPlan = plans.get(i);
+      if (i > 0) {
+        json.append(',');
+      }
       json.begin('{');
       json.keyVal("hash", metaQueryPlan.hash());
       json.keyVal("whenCaptured", metaQueryPlan.whenCaptured().toString());
