@@ -66,6 +66,7 @@ public class InsightClient {
   private long latencyMillis;
   private long collectMicros;
   private long reportMicros;
+  private long lastEventTime;
 
   /**
    * Create a new builder for InsightClient.
@@ -134,7 +135,8 @@ public class InsightClient {
     if (!ping || ping()) {
       active = true;
       long periodMillis = periodSecs * 1000;
-      Date first = new Date(System.currentTimeMillis() + periodMillis);
+      lastEventTime = System.currentTimeMillis();
+      Date first = new Date(lastEventTime + periodMillis);
       timer.schedule(new Task(), first, periodMillis);
       if (planCapture != null) {
         planCapture.start();
@@ -218,6 +220,13 @@ public class InsightClient {
   }
 
   String buildJsonContent() {
+    final long eventTime = System.currentTimeMillis();
+    final long startEventTime = lastEventTime;
+    // Advance immediately: collectMetrics(reset=true) below captures the delta
+    // since the previous collect regardless of whether this POST succeeds, so
+    // the next request's window must start at this eventTime.
+    lastEventTime = eventTime;
+
     JsonSimple json = new JsonSimple();
 
     json.append("{");
@@ -225,7 +234,8 @@ public class InsightClient {
     json.keyVal("appName", appName);
     json.keyVal("instanceId", instanceId);
     json.keyVal("version", version);
-    json.keyVal("eventTime", System.currentTimeMillis());
+    json.keyVal("eventTime", eventTime);
+    json.keyVal("startEventTime", startEventTime);
     json.keyVal("collect", collectMicros);
     json.keyVal("report", reportMicros);
     json.keyVal("latency", latencyMillis);

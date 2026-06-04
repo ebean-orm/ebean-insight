@@ -104,8 +104,42 @@ class InsightClientTest {
     String jsonContent = client.buildJsonContent();
 
     assertThat(jsonContent).contains("{\"eventTime\":");
+    assertThat(jsonContent).contains(",\"startEventTime\":");
     assertThat(jsonContent).contains(" ,\"collect\":");
     assertThat(jsonContent).doesNotContain(" ,\"metrics\":[");
+  }
+
+  @Test
+  void buildJsonContent_startEventTimeAdvances() throws Exception {
+    InsightClient client = InsightClient.builder()
+      .collectEbeanMetrics(false)
+      .collectAvajeMetrics(false)
+      .build();
+
+    String first = client.buildJsonContent();
+    Thread.sleep(2);
+    String second = client.buildJsonContent();
+
+    long firstEvent = extractLong(first, "\"eventTime\":");
+    long firstStart = extractLong(first, "\"startEventTime\":");
+    long secondEvent = extractLong(second, "\"eventTime\":");
+    long secondStart = extractLong(second, "\"startEventTime\":");
+
+    // start() (called from build()) primes lastEventTime, so first window has a real start.
+    assertThat(firstStart).isGreaterThan(0L);
+    assertThat(firstEvent).isGreaterThanOrEqualTo(firstStart);
+    // Second call's window starts where the first call ended -> disjoint windows.
+    assertThat(secondStart).isEqualTo(firstEvent);
+    assertThat(secondEvent).isGreaterThanOrEqualTo(firstEvent);
+  }
+
+  private static long extractLong(String json, String key) {
+    int i = json.indexOf(key) + key.length();
+    int j = i;
+    while (j < json.length() && (Character.isDigit(json.charAt(j)) || json.charAt(j) == '-')) {
+      j++;
+    }
+    return Long.parseLong(json.substring(i, j));
   }
 
   @Test
