@@ -4,6 +4,7 @@ module io.ebean.insight {
 
   requires transitive java.net.http;
   requires transitive io.avaje.applog;
+  requires transitive io.avaje.config;
 
   requires static io.ebean.api;
   requires static io.avaje.metrics;

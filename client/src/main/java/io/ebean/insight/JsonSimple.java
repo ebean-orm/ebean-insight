@@ -53,6 +53,33 @@ final class JsonSimple {
     buffer.append('"');
   }
 
+  /**
+   * Emit a key with a JSON object value containing string-string entries.
+   * Skips entirely if the map is null/empty.
+   */
+  void keyValMap(String key, java.util.Map<String, String> map) {
+    if (map == null || map.isEmpty()) {
+      return;
+    }
+    preKey();
+    str(key);
+    buffer.append(':').append('{');
+    boolean first = true;
+    for (var e : map.entrySet()) {
+      if (e.getKey() == null || e.getValue() == null) {
+        continue;
+      }
+      if (!first) {
+        buffer.append(',');
+      }
+      first = false;
+      buffer.append('"').append(JsonEscape.escape(e.getKey())).append('"');
+      buffer.append(':');
+      buffer.append('"').append(JsonEscape.escape(e.getValue())).append('"');
+    }
+    buffer.append('}');
+  }
+
   private void preKey() {
     if (keyPrefix) {
       buffer.append(" ,");

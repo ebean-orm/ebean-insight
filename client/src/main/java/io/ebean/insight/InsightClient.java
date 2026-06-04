@@ -47,6 +47,7 @@ public class InsightClient {
   private final String appName;
   private final String instanceId;
   private final String version;
+  private final Map<String, String> resAttrs;
   private final URI ingestUri;
   private final URI ingestPlansUri;
   private final String pingUrl;
@@ -95,6 +96,7 @@ public class InsightClient {
     this.appName = builder.appName;
     this.instanceId = builder.instanceId;
     this.version = builder.version;
+    this.resAttrs = Map.copyOf(builder.resAttrs);
     this.gzip = builder.gzip;
     this.ping = builder.ping;
     this.timeoutSecs = builder.timeoutSecs;
@@ -227,6 +229,7 @@ public class InsightClient {
     json.keyVal("collect", collectMicros);
     json.keyVal("report", reportMicros);
     json.keyVal("latency", latencyMillis);
+    json.keyValMap("resAttrs", resAttrs);
 
     if (collectAvajeMetrics) {
       addAvajeMetrics(json);
@@ -334,6 +337,7 @@ public class InsightClient {
     private boolean collectEbeanMetrics;
     private boolean collectAvajeMetrics;
     private final List<Database> databaseList = new ArrayList<>();
+    private final Map<String, String> resAttrs = new LinkedHashMap<>();
 
     Builder() {
       this.enabled = Config.getBool("ebean.insight.enabled", true);
@@ -349,6 +353,13 @@ public class InsightClient {
       this.environment = Config.getNullable("app.environment");
       this.instanceId = Config.getNullable("app.instanceId", System.getenv("HOSTNAME"));
       this.version = Config.getNullable("app.version");
+      // Auto-populate resource attributes from the standard OTEL env var
+      // (also honour Java system property of the same name).
+      String otelAttrs = System.getenv("OTEL_RESOURCE_ATTRIBUTES");
+      if (otelAttrs == null || otelAttrs.isBlank()) {
+        otelAttrs = System.getProperty("otel.resource.attributes");
+      }
+      this.resAttrs.putAll(OtelResourceAttributes.parse(otelAttrs));
     }
 
     /**
@@ -412,6 +423,40 @@ public class InsightClient {
      */
     public Builder version(String version) {
       this.version = version;
+      return this;
+    }
+
+    /**
+     * Add an additional OTel resource attribute that will be forwarded to
+     * any downstream OTLP exporter on the insight-server. By default, attributes
+     * are auto-populated from the {@code OTEL_RESOURCE_ATTRIBUTES} env var
+     * (using the standard W3C-baggage-style {@code key=value,key=value} syntax).
+     * Use this method to add or override entries programmatically.
+     *
+     * <p>The reserved keys {@code service.name}, {@code service.version},
+     * {@code service.instance.id} and {@code deployment.environment.name} are
+     * always sourced from the dedicated builder fields and will be ignored
+     * here by the server.
+     */
+    public Builder resourceAttribute(String key, String value) {
+      if (key != null && !key.isEmpty() && value != null) {
+        this.resAttrs.put(key, value);
+      }
+      return this;
+    }
+
+    /**
+     * Add OTel resource attributes from a single {@code key=value,key2=value2}
+     * string — the same format as the {@code OTEL_RESOURCE_ATTRIBUTES} env var.
+     * Values may be URL-encoded (per W3C baggage). Existing entries with the
+     * same key are overwritten.
+     *
+     * <pre>{@code
+     *   .resourceAttributes("business.domain=ingestion,business.system=consolidation")
+     * }</pre>
+     */
+    public Builder resourceAttributes(String rawKeyValues) {
+      this.resAttrs.putAll(OtelResourceAttributes.parse(rawKeyValues));
       return this;
     }
 
