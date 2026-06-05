@@ -363,7 +363,11 @@ public class InsightClient implements Consumer<ServerMetrics> {
 
     final long latencyStart = System.currentTimeMillis();
     httpClient.sendAsync(builder.build(), ofString())
-      .thenAccept(res -> {
+      .whenComplete((res, ex) -> {
+        if (ex != null) {
+          log.log(WARNING, "Failed to send metrics - {0}", ex.toString());
+          return;
+        }
         latencyMillis = System.currentTimeMillis() - latencyStart;
         final int code = res.statusCode();
         if (code < 300) {
