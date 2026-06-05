@@ -5,6 +5,7 @@ import io.avaje.config.Config;
 import io.avaje.metrics.Metrics;
 import io.ebean.Database;
 import io.ebean.meta.MetaQueryPlan;
+import io.ebean.meta.ServerMetrics;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -15,6 +16,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.zip.GZIPOutputStream;
 
 import static java.lang.System.Logger.Level.*;
@@ -36,8 +38,20 @@ import static java.net.http.HttpResponse.BodyHandlers.ofString;
  *       .build();
  *
  * }</pre>
+ *
+ * <h2>External metric feed</h2>
+ * InsightClient implements {@link Consumer}{@code <ServerMetrics>} so a single
+ * upstream collector (e.g. {@code DatabaseMetricSupplier} in avaje-metrics-ebean)
+ * can own the reset-on-read poll of {@code metaInfo()} and fan the snapshot out
+ * to this client. Each {@link #accept(ServerMetrics)} call POSTs the snapshot
+ * immediately to insight-server.
+ * <p>
+ * When using this pattern leave {@code collectEbeanMetrics(false)} (default) so
+ * the client's internal Timer doesn't also poll ebean metrics. With both
+ * {@code collectEbeanMetrics} and {@code collectAvajeMetrics} false, the metric
+ * Timer task is not scheduled at all — only {@link QueryPlanCapture} runs.
  */
-public class InsightClient {
+public class InsightClient implements Consumer<ServerMetrics> {
 
   static final System.Logger log = AppLog.getLogger("io.ebean.Insight");
 
@@ -134,10 +148,12 @@ public class InsightClient {
     }
     if (!ping || ping()) {
       active = true;
-      long periodMillis = periodSecs * 1000;
       lastEventTime = System.currentTimeMillis();
-      Date first = new Date(lastEventTime + periodMillis);
-      timer.schedule(new Task(), first, periodMillis);
+      if (collectEbeanMetrics || collectAvajeMetrics) {
+        long periodMillis = periodSecs * 1000;
+        Date first = new Date(lastEventTime + periodMillis);
+        timer.schedule(new Task(), first, periodMillis);
+      }
       if (planCapture != null) {
         planCapture.start();
       }
@@ -188,6 +204,52 @@ public class InsightClient {
     } catch (Throwable e) {
       log.log(WARNING, "Error reporting query plans", e);
     }
+  }
+
+  /**
+   * Accept an externally-collected {@link ServerMetrics} snapshot and POST it
+   * to insight-server immediately. Lets an upstream collector (e.g.
+   * {@code DatabaseMetricSupplier}) own the single reset-on-read poll of
+   * {@code metaInfo()} and fan the snapshot out to this client.
+   * <p>
+   * When using this method leave {@code collectEbeanMetrics(false)} so the
+   * client's internal Timer doesn't also poll ebean metrics.
+   */
+  @Override
+  public void accept(ServerMetrics metrics) {
+    if (!enabled || !active || metrics == null) {
+      return;
+    }
+    try {
+      post(ingestUri, buildExternalMetricsJson(metrics));
+    } catch (Throwable e) {
+      log.log(WARNING, "Error reporting ebean metrics", e);
+    }
+  }
+
+  private String buildExternalMetricsJson(ServerMetrics metrics) {
+    final long eventTime;
+    final long startEventTime;
+    synchronized (this) {
+      eventTime = System.currentTimeMillis();
+      startEventTime = lastEventTime;
+      lastEventTime = eventTime;
+    }
+    JsonSimple json = new JsonSimple();
+    json.append("{");
+    json.keyVal("environment", environment);
+    json.keyVal("appName", appName);
+    json.keyVal("instanceId", instanceId);
+    json.keyVal("version", version);
+    json.keyVal("eventTime", eventTime);
+    json.keyVal("startEventTime", startEventTime);
+    json.keyValMap("resAttrs", resAttrs);
+    json.key("dbs");
+    json.append('[');
+    metrics.asJson().write(json.buffer());
+    json.append(']');
+    json.append("}");
+    return json.asJson();
   }
 
   String buildPlansJson(List<MetaQueryPlan> plans) {
@@ -358,7 +420,7 @@ public class InsightClient {
       this.gzip = Config.getBool("ebean.insight.gzip", true);
       this.ping = Config.getBool("ebean.insight.ping", false);
       this.collectEbeanMetrics = Config.getBool("ebean.insight.collectEbeanMetrics", true);
-      this.collectAvajeMetrics = Config.getBool("ebean.insight.collectAvajeMetrics", true);
+      this.collectAvajeMetrics = Config.getBool("ebean.insight.collectAvajeMetrics", false);
       this.appName = Config.getNullable("app.name");
       this.environment = Config.getNullable("app.environment");
       this.instanceId = Config.getNullable("app.instanceId", System.getenv("HOSTNAME"));
