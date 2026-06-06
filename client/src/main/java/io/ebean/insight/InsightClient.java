@@ -128,7 +128,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
       .build();
 
     if (builder.capturePlans() && !databaseList.isEmpty()) {
-      planCapture = new QueryPlanCapture(databaseList.get(0), this, 10);
+      planCapture = new QueryPlanCapture(databaseList.get(0), this, 10, builder.queryPlanListener());
     } else {
       planCapture = null;
     }
@@ -400,6 +400,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
 
     private boolean enabled;
     private boolean capturePlans;
+    private Consumer<MetaQueryPlan> queryPlanListener;
     private String url;
     private String key;
     private String environment;
@@ -597,6 +598,35 @@ public class InsightClient implements Consumer<ServerMetrics> {
     }
 
     /**
+     * Register a listener notified for each query plan as it is captured.
+     * <p>
+     * The listener is invoked once per captured {@link MetaQueryPlan} on Ebean's
+     * background executor thread, independent of whether the plan is successfully
+     * sent to the insight server. This allows the application to log captured plans
+     * (for example, as SLF4J structured key/value logs). Any exception thrown by the
+     * listener is caught and logged so it cannot disrupt capture or sending.
+     *
+     * <pre>{@code
+     *
+     *   InsightClient.builder()
+     *     .database(db)
+     *     .capturePlans(true)
+     *     .onQueryPlanCaptured(plan ->
+     *       log.atInfo()
+     *         .addKeyValue("ebean.plan.hash", plan.hash())
+     *         .addKeyValue("ebean.plan.label", plan.label())
+     *         .addKeyValue("ebean.plan.queryTimeMicros", plan.queryTimeMicros())
+     *         .log("ebean query plan captured"))
+     *     .build();
+     *
+     * }</pre>
+     */
+    public Builder onQueryPlanCaptured(Consumer<MetaQueryPlan> listener) {
+      this.queryPlanListener = listener;
+      return this;
+    }
+
+    /**
      * Not enabled if no valid key provided or explicitly disabled via property.
      */
     boolean enabled() {
@@ -605,6 +635,10 @@ public class InsightClient implements Consumer<ServerMetrics> {
 
     boolean capturePlans() {
       return capturePlans;
+    }
+
+    Consumer<MetaQueryPlan> queryPlanListener() {
+      return queryPlanListener;
     }
 
     private boolean validKey() {

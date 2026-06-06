@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import static java.lang.System.Logger.Level.*;
 
@@ -24,11 +25,13 @@ final class QueryPlanCapture {
   private final Database database;
   private final InsightClient client;
   private final int freqSeconds;
+  private final Consumer<MetaQueryPlan> listener;
 
-  QueryPlanCapture(Database database, InsightClient client, int freqSeconds) {
+  QueryPlanCapture(Database database, InsightClient client, int freqSeconds, Consumer<MetaQueryPlan> listener) {
     this.database = database;
     this.client = client;
     this.freqSeconds = freqSeconds;
+    this.listener = listener;
   }
 
   void start() {
@@ -69,13 +72,14 @@ final class QueryPlanCapture {
       if (!capturedPlans.isEmpty()) {
         for (MetaQueryPlan metaQueryPlan : capturedPlans) {
           Instant whenInitiated = pendingCapture.remove(metaQueryPlan.hash());
-          log.log(INFO, "Query plan captured for {0} initialised:{1}", metaQueryPlan.hash(), whenInitiated);
+          log.log(DEBUG, "Query plan captured for {0} initialised:{1}", metaQueryPlan.hash(), whenInitiated);
+          notifyListener(metaQueryPlan);
         }
         sendPlans(capturedPlans);
       }
       int stillPending = pendingCapture.size();
       if (stillPending > 0) {
-        log.log(INFO, "{0} Pending query plan capture for plans - {1}", stillPending, pendingCapture.keySet());
+        log.log(DEBUG, "{0} Pending query plan capture for plans - {1}", stillPending, pendingCapture.keySet());
       }
     } catch (Exception e) {
       log.log(WARNING, "Error during query plan capture", e);
@@ -84,6 +88,16 @@ final class QueryPlanCapture {
 
   private void sendPlans(List<MetaQueryPlan> plans) {
     client.sendPlans(plans);
+  }
+
+  void notifyListener(MetaQueryPlan plan) {
+    if (listener != null) {
+      try {
+        listener.accept(plan);
+      } catch (Exception e) {
+        log.log(WARNING, "Error in query plan capture listener for: " + plan.hash(), e);
+      }
+    }
   }
 
   private void pendingCaptureInitialisation() {
@@ -103,7 +117,7 @@ final class QueryPlanCapture {
     for (MetaQueryPlan metaQueryPlan : initialisedPlans) {
       planInit.remove(metaQueryPlan.hash());
       pendingCapture.put(metaQueryPlan.hash(), Instant.now());
-      log.log(INFO, "Initialised query plan capture for {0} {1}", metaQueryPlan.hash(), metaQueryPlan.label());
+      log.log(DEBUG, "Initialised query plan capture for {0} {1}", metaQueryPlan.hash(), metaQueryPlan.label());
     }
   }
 

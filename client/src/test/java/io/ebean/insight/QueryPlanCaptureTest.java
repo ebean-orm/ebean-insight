@@ -1,12 +1,45 @@
 package io.ebean.insight;
 
+import io.ebean.ProfileLocation;
+import io.ebean.meta.MetaQueryPlan;
 import io.ebean.meta.QueryPlanInit;
 import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 import static io.ebean.insight.QueryPlanCapture.parseMessage;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class QueryPlanCaptureTest {
+
+  @Test
+  void notifyListener_invokesListenerWithPlan() {
+    List<MetaQueryPlan> received = new ArrayList<>();
+    QueryPlanCapture capture = new QueryPlanCapture(null, null, 10, received::add);
+
+    MetaQueryPlan plan = new Plan("h1");
+    capture.notifyListener(plan);
+
+    assertThat(received).containsExactly(plan);
+  }
+
+  @Test
+  void notifyListener_swallowsListenerException() {
+    QueryPlanCapture capture = new QueryPlanCapture(null, null, 10, p -> {
+      throw new RuntimeException("boom");
+    });
+
+    // must not propagate
+    capture.notifyListener(new Plan("h1"));
+  }
+
+  @Test
+  void notifyListener_nullListener_noop() {
+    QueryPlanCapture capture = new QueryPlanCapture(null, null, 10, null);
+    capture.notifyListener(new Plan("h1"));
+  }
 
   @Test
   void testParseMessage_allQueryPlans() {
@@ -53,5 +86,25 @@ class QueryPlanCaptureTest {
     assertThat(init.thresholdMicros("myHash1")).isEqualTo(100L);
     assertThat(init.thresholdMicros("myHash2")).isEqualTo(0L);
     assertThat(init.thresholdMicros("myHash3")).isEqualTo(200L);
+  }
+
+  static final class Plan implements MetaQueryPlan {
+    private final String hash;
+
+    Plan(String hash) {
+      this.hash = hash;
+    }
+
+    @Override public Class<?> beanType() { return null; }
+    @Override public String label() { return "la"; }
+    @Override public ProfileLocation profileLocation() { return null; }
+    @Override public String sql() { return "select 1"; }
+    @Override public String hash() { return hash; }
+    @Override public String bind() { return "bi"; }
+    @Override public String plan() { return "pl"; }
+    @Override public long queryTimeMicros() { return 0; }
+    @Override public long captureCount() { return 0; }
+    @Override public long captureMicros() { return 0; }
+    @Override public Instant whenCaptured() { return Instant.EPOCH; }
   }
 }
