@@ -457,6 +457,10 @@ public class InsightClient implements Consumer<ServerMetrics> {
 
     /**
      * Set the environment this server is running in (dev, test, prod etc).
+     * <p>
+     * When not set explicitly (here or via the {@code app.environment} property)
+     * it falls back to the {@code deployment.environment.name} OTEL resource
+     * attribute, so OTEL-native deployments report the correct environment.
      */
     public Builder environment(String environment) {
       this.environment = environment;
@@ -653,7 +657,41 @@ public class InsightClient implements Consumer<ServerMetrics> {
      * </p>
      */
     public InsightClient build() {
+      applyResourceAttributeDefaults();
       return new InsightClient(this).start();
+    }
+
+    /**
+     * Back-fill the reserved fields from the OTEL resource attributes when they
+     * were not set explicitly (via the {@code app.*} properties or builder
+     * methods). This lets apps configured the OTEL-native way — supplying only
+     * {@code OTEL_RESOURCE_ATTRIBUTES} (e.g. {@code deployment.environment.name},
+     * {@code service.name}) — still report the correct environment, service name,
+     * version and instance id on both metrics and captured query plans.
+     */
+    private void applyResourceAttributeDefaults() {
+      if (environment == null) {
+        environment = firstNonBlank(resAttrs.get("deployment.environment.name"),
+          resAttrs.get("deployment.environment"));
+      }
+      if (appName == null) {
+        appName = blankToNull(resAttrs.get("service.name"));
+      }
+      if (version == null) {
+        version = blankToNull(resAttrs.get("service.version"));
+      }
+      if (instanceId == null) {
+        instanceId = blankToNull(resAttrs.get("service.instance.id"));
+      }
+    }
+
+    private static String firstNonBlank(String a, String b) {
+      String v = blankToNull(a);
+      return v != null ? v : blankToNull(b);
+    }
+
+    private static String blankToNull(String v) {
+      return (v == null || v.isBlank()) ? null : v;
     }
 
     boolean isCollectAvajeMetrics() {

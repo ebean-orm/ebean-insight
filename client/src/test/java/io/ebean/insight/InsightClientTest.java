@@ -165,6 +165,46 @@ class InsightClientTest {
     assertThat(twoPlansJson).isEqualTo("{\"environment\":\"e\" ,\"appName\":\"a\" ,\"plans\":[{\"hash\":\"abc\" ,\"whenCaptured\":\"2025-01-02T03:04:05.123Z\" ,\"label\":\"la\" ,\"queryTimeMicros\":0 ,\"captureMicros\":0 ,\"captureCount\":0 ,\"bind\":\"bi\" ,\"plan\":\"pl\" ,\"sql\":\"select 1\"},{\"hash\":\"def\" ,\"whenCaptured\":\"2025-01-02T03:04:05.123Z\" ,\"label\":\"la\" ,\"queryTimeMicros\":0 ,\"captureMicros\":0 ,\"captureCount\":0 ,\"bind\":\"bi\" ,\"plan\":\"pl\" ,\"sql\":\"select 2\"}]}");
   }
 
+  @Test
+  void resourceAttributes_backfillEnvironment_whenNotSetExplicitly() {
+    InsightClient client = InsightClient.builder()
+      .appName("a")
+      .resourceAttributes("deployment.environment.name=test")
+      .build();
+
+    String json = client.buildPlansJson(List.of(
+      newPlan("select 1", "abc", Instant.parse("2025-01-02T03:04:05.123Z"))));
+
+    assertThat(json).contains("\"environment\":\"test\"");
+  }
+
+  @Test
+  void resourceAttributes_backfillEnvironment_legacyKey() {
+    InsightClient client = InsightClient.builder()
+      .appName("a")
+      .resourceAttributes("deployment.environment=test")
+      .build();
+
+    String json = client.buildPlansJson(List.of(
+      newPlan("select 1", "abc", Instant.parse("2025-01-02T03:04:05.123Z"))));
+
+    assertThat(json).contains("\"environment\":\"test\"");
+  }
+
+  @Test
+  void explicitEnvironment_winsOverResourceAttributes() {
+    InsightClient client = InsightClient.builder()
+      .appName("a")
+      .environment("prod")
+      .resourceAttributes("deployment.environment.name=test")
+      .build();
+
+    String json = client.buildPlansJson(List.of(
+      newPlan("select 1", "abc", Instant.parse("2025-01-02T03:04:05.123Z"))));
+
+    assertThat(json).contains("\"environment\":\"prod\"");
+  }
+
   private MetaQueryPlan newPlan(String sql, String hash, Instant whenCaptured) {
     return new Plan(sql, hash, whenCaptured);
   }
