@@ -205,6 +205,60 @@ class InsightClientTest {
     assertThat(json).contains("\"environment\":\"prod\"");
   }
 
+  @Test
+  void appEnvProperty_backfillEnvironment_whenAppEnvironmentNotSet() {
+    Config.setProperty("app.env", "staging");
+    try {
+      InsightClient client = InsightClient.builder()
+        .appName("a")
+        .build();
+
+      String json = client.buildPlansJson(List.of(
+        newPlan("select 1", "abc", Instant.parse("2025-01-02T03:04:05.123Z"))));
+
+      assertThat(json).contains("\"environment\":\"staging\"");
+    } finally {
+      Config.clearProperty("app.env");
+    }
+  }
+
+  @Test
+  void appEnvironmentProperty_winsOver_appEnv() {
+    Config.setProperty("app.environment", "prod");
+    Config.setProperty("app.env", "staging");
+    try {
+      InsightClient client = InsightClient.builder()
+        .appName("a")
+        .build();
+
+      String json = client.buildPlansJson(List.of(
+        newPlan("select 1", "abc", Instant.parse("2025-01-02T03:04:05.123Z"))));
+
+      assertThat(json).contains("\"environment\":\"prod\"");
+    } finally {
+      Config.clearProperty("app.environment");
+      Config.clearProperty("app.env");
+    }
+  }
+
+  @Test
+  void appEnvProperty_winsOver_resourceAttributes() {
+    Config.setProperty("app.env", "staging");
+    try {
+      InsightClient client = InsightClient.builder()
+        .appName("a")
+        .resourceAttributes("deployment.environment.name=test")
+        .build();
+
+      String json = client.buildPlansJson(List.of(
+        newPlan("select 1", "abc", Instant.parse("2025-01-02T03:04:05.123Z"))));
+
+      assertThat(json).contains("\"environment\":\"staging\"");
+    } finally {
+      Config.clearProperty("app.env");
+    }
+  }
+
   private MetaQueryPlan newPlan(String sql, String hash, Instant whenCaptured) {
     return new Plan(sql, hash, whenCaptured);
   }

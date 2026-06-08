@@ -427,7 +427,12 @@ public class InsightClient implements Consumer<ServerMetrics> {
       this.collectEbeanMetrics = Config.getBool("ebean.insight.collectEbeanMetrics", true);
       this.collectAvajeMetrics = Config.getBool("ebean.insight.collectAvajeMetrics", false);
       this.appName = Config.getNullable("app.name");
-      this.environment = Config.getNullable("app.environment");
+      // Primary is the avaje standard 'app.environment'; fall back to the
+      // 'app.env' property / APP_ENV env var used by some apps. OTEL resource
+      // attributes back-fill later in applyResourceAttributeDefaults().
+      this.environment = firstNonBlank(
+        Config.getNullable("app.environment"),
+        Config.getNullable("app.env", System.getenv("APP_ENV")));
       this.instanceId = Config.getNullable("app.instanceId", System.getenv("HOSTNAME"));
       this.version = Config.getNullable("app.version");
       // Auto-populate resource attributes from the standard OTEL env var
@@ -458,9 +463,10 @@ public class InsightClient implements Consumer<ServerMetrics> {
     /**
      * Set the environment this server is running in (dev, test, prod etc).
      * <p>
-     * When not set explicitly (here or via the {@code app.environment} property)
-     * it falls back to the {@code deployment.environment.name} OTEL resource
-     * attribute, so OTEL-native deployments report the correct environment.
+     * When not set explicitly (here or via the {@code app.environment} or
+     * {@code app.env} property / {@code APP_ENV} env var) it falls back to the
+     * {@code deployment.environment.name} OTEL resource attribute, so OTEL-native
+     * deployments report the correct environment.
      */
     public Builder environment(String environment) {
       this.environment = environment;
