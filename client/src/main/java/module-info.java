@@ -8,4 +8,5 @@ module io.ebean.insight {
 
   requires static io.ebean.api;
   requires static io.avaje.metrics;
+  requires static io.avaje.metrics.ebean;
 }

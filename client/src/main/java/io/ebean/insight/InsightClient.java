@@ -2,7 +2,9 @@ package io.ebean.insight;
 
 import io.avaje.applog.AppLog;
 import io.avaje.config.Config;
+import io.avaje.metrics.MetricRegistry;
 import io.avaje.metrics.Metrics;
+import io.avaje.metrics.ebean.DatabaseMetricSupplier;
 import io.ebean.Database;
 import io.ebean.meta.MetaQueryPlan;
 import io.ebean.meta.ServerMetrics;
@@ -54,6 +56,10 @@ import static java.net.http.HttpResponse.BodyHandlers.ofString;
  * can own the reset-on-read poll of {@code metaInfo()} and fan the snapshot out
  * to this client. Each {@link #accept(ServerMetrics)} call POSTs the snapshot
  * immediately to insight-server.
+ * <p>
+ * The {@link #register()} convenience wires this up per registered database
+ * ({@code build().register()}); for full control build the supplier explicitly
+ * with {@code DatabaseMetricSupplier.builder(database).forwardTo(client)}.
  * <p>
  * With this pattern leave {@code collectEbeanMetrics(false)} (the default) so the
  * client's internal Timer doesn't also poll ebean metrics. With both
@@ -148,6 +154,62 @@ public class InsightClient implements Consumer<ServerMetrics> {
    */
   public boolean isActive() {
     return active;
+  }
+
+  /**
+   * Register a {@link DatabaseMetricSupplier} for each registered database that
+   * forwards every reset-on-read snapshot to this client, using the default
+   * avaje-metrics registry. Returns this client for fluent use:
+   *
+   * <pre>{@code
+   *   InsightClient.builder()
+   *       .appName("myapp")
+   *       .environment("dev")
+   *       .database(database)
+   *       .capturePlans(true)
+   *       .build()
+   *       .register();
+   * }</pre>
+   *
+   * <p>This is the blessed convenience for the <em>forwarder</em> role: a single
+   * avaje-metrics-owned poll collects the Ebean metrics and fans the snapshot out
+   * here via {@link #accept(ServerMetrics)}. Leave {@code collectEbeanMetrics}
+   * false (the default) so the client's own Timer does not <em>also</em> poll the
+   * same database (a double reset-on-read split).
+   *
+   * <p>Requires {@code avaje-metrics-ebean} on the classpath/module-path (an
+   * optional dependency). For full control over supplier options
+   * ({@code legacyNames}, pool metrics) build the supplier explicitly with
+   * {@code DatabaseMetricSupplier.builder(database).forwardTo(client)} instead.
+   *
+   * @return this client
+   */
+  public InsightClient register() {
+    if (databaseList.isEmpty()) {
+      log.log(WARNING, "InsightClient.register() called with no database registered - nothing to forward");
+      return this;
+    }
+    if (collectEbeanMetrics) {
+      log.log(WARNING, "InsightClient.register() with collectEbeanMetrics(true) double-polls the database - prefer the forwarder default collectEbeanMetrics(false)");
+    }
+    for (Database database : databaseList) {
+      DatabaseMetricSupplier.builder(database).forwardTo(this).build().register();
+    }
+    return this;
+  }
+
+  /**
+   * Register a {@link DatabaseMetricSupplier} per database to the given
+   * {@link MetricRegistry}, forwarding each snapshot to this client.
+   * See {@link #register()} for the common (default registry) case.
+   *
+   * @return this client
+   */
+  public InsightClient register(MetricRegistry registry) {
+    for (Database database : databaseList) {
+      DatabaseMetricSupplier.builder(database).forwardTo(this).build().register(registry);
+    }
+    return this;
   }
 
   InsightClient start() {

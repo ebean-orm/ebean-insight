@@ -86,6 +86,33 @@ class InsightClientTest {
   }
 
   @Test
+  void register_noDatabase_returnsClient_noThrow() {
+    // forwarder wiring needs a database; with none it warns and is a no-op.
+    // (the per-database DatabaseMetricSupplier forwarding is covered by
+    // avaje-metrics-ebean tests and live verification.)
+    InsightClient client = InsightClient.builder()
+      .appName("test")
+      .environment("local")
+      .key("YeahNah")
+      .ping(false)
+      .build();
+
+    assertThat(client.register()).isSameAs(client);
+  }
+
+  @Test
+  void register_withRegistry_noDatabase_returnsClient_noThrow() {
+    InsightClient client = InsightClient.builder()
+      .appName("test")
+      .environment("local")
+      .key("YeahNah")
+      .ping(false)
+      .build();
+
+    assertThat(client.register(Metrics.createRegistry())).isSameAs(client);
+  }
+
+  @Test
   void notEnabled_when_keyNotValid() {
 
     // not valid keys
