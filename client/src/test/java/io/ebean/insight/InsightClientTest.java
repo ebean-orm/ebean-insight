@@ -65,6 +65,27 @@ class InsightClientTest {
   }
 
   @Test
+  void collectEbeanMetrics_defaultsToFalse_forwarderRole() {
+    // Default role is "forwarder only": the client does not poll ebean metrics
+    // itself (an upstream collector feeds snapshots via accept(ServerMetrics)).
+    assertThat(InsightClient.builder().collectEbeanMetrics()).isFalse();
+
+    // Opt in to make the client the primary ebean metrics collector.
+    assertThat(InsightClient.builder().collectEbeanMetrics(true).collectEbeanMetrics()).isTrue();
+  }
+
+  @Test
+  void collectEbeanMetrics_configOverride() {
+    Config.setProperty("ebean.insight.collectEbeanMetrics", "true");
+    try {
+      assertThat(InsightClient.builder().collectEbeanMetrics()).isTrue();
+    } finally {
+      Config.clearProperty("ebean.insight.collectEbeanMetrics");
+    }
+    assertThat(InsightClient.builder().collectEbeanMetrics()).isFalse();
+  }
+
+  @Test
   void notEnabled_when_keyNotValid() {
 
     // not valid keys

@@ -24,8 +24,16 @@ import static java.net.http.HttpRequest.BodyPublishers.ofByteArray;
 import static java.net.http.HttpResponse.BodyHandlers.ofString;
 
 /**
- * Client that collects Ebean metrics and Avaje metrics for
- * sending to the monitoring service.
+ * Client that forwards Ebean and Avaje metrics to the insight server and
+ * captures Ebean query plans.
+ *
+ * <p>By default InsightClient acts as a <em>forwarder</em>: it does not poll
+ * metrics itself ({@code collectEbeanMetrics} and {@code collectAvajeMetrics}
+ * both default to false). An upstream collector owns metric collection and feeds
+ * snapshots in (see <em>External metric feed</em> below), while this client
+ * forwards them on and — when {@code capturePlans(true)} and a database are
+ * registered — captures query plans. Opt in to {@code collectEbeanMetrics} /
+ * {@code collectAvajeMetrics} to instead make this client the primary collector.
  *
  * <pre>{@code
  *
@@ -34,6 +42,7 @@ import static java.net.http.HttpResponse.BodyHandlers.ofString;
  *       .appName("myapp")
  *       .environment("dev")
  *       .database(myDatabase)
+ *       .capturePlans(true)
  *       .key("YeahNah")
  *       .build();
  *
@@ -46,8 +55,8 @@ import static java.net.http.HttpResponse.BodyHandlers.ofString;
  * to this client. Each {@link #accept(ServerMetrics)} call POSTs the snapshot
  * immediately to insight-server.
  * <p>
- * When using this pattern leave {@code collectEbeanMetrics(false)} (default) so
- * the client's internal Timer doesn't also poll ebean metrics. With both
+ * With this pattern leave {@code collectEbeanMetrics(false)} (the default) so the
+ * client's internal Timer doesn't also poll ebean metrics. With both
  * {@code collectEbeanMetrics} and {@code collectAvajeMetrics} false, the metric
  * Timer task is not scheduled at all — only {@link QueryPlanCapture} runs.
  */
@@ -424,7 +433,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
       this.timeoutSecs = Config.getInt("ebean.insight.timeoutSecs", 15);
       this.gzip = Config.getBool("ebean.insight.gzip", true);
       this.ping = Config.getBool("ebean.insight.ping", false);
-      this.collectEbeanMetrics = Config.getBool("ebean.insight.collectEbeanMetrics", true);
+      this.collectEbeanMetrics = Config.getBool("ebean.insight.collectEbeanMetrics", false);
       this.collectAvajeMetrics = Config.getBool("ebean.insight.collectAvajeMetrics", false);
       this.appName = Config.getNullable("app.name");
       // Primary is the avaje standard 'app.environment'; fall back to the
@@ -576,7 +585,15 @@ public class InsightClient implements Consumer<ServerMetrics> {
     }
 
     /**
-     * Set collection of Ebean ORM metrics. Defaults to true.
+     * Set collection of Ebean ORM metrics. Defaults to false.
+     * <p>
+     * Leave this false (the default) when InsightClient is a forwarder — i.e. an
+     * upstream collector (e.g. {@code DatabaseMetricSupplier} in
+     * avaje-metrics-ebean) owns the single reset-on-read poll of {@code metaInfo()}
+     * and feeds snapshots in via {@link InsightClient#accept(ServerMetrics)}.
+     * Setting both this and that external feed active double-polls the
+     * reset-on-read metrics and splits the deltas. Set this true only when
+     * InsightClient itself is the primary Ebean metrics collector.
      */
     public Builder collectEbeanMetrics(boolean collectEbeanMetrics) {
       this.collectEbeanMetrics = collectEbeanMetrics;
@@ -645,6 +662,10 @@ public class InsightClient implements Consumer<ServerMetrics> {
 
     boolean capturePlans() {
       return capturePlans;
+    }
+
+    boolean collectEbeanMetrics() {
+      return collectEbeanMetrics;
     }
 
     Consumer<MetaQueryPlan> queryPlanListener() {
