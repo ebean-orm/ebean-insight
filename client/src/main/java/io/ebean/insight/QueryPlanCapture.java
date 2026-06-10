@@ -27,12 +27,14 @@ final class QueryPlanCapture {
   private final Database database;
   private final InsightClient client;
   private final int freqSeconds;
+  private final int captureDelaySecs;
   private final Consumer<MetaQueryPlan> listener;
 
-  QueryPlanCapture(Database database, InsightClient client, int freqSeconds, Consumer<MetaQueryPlan> listener) {
+  QueryPlanCapture(Database database, InsightClient client, int freqSeconds, int captureDelaySecs, Consumer<MetaQueryPlan> listener) {
     this.database = database;
     this.client = client;
     this.freqSeconds = freqSeconds;
+    this.captureDelaySecs = captureDelaySecs;
     this.listener = listener;
   }
 
@@ -56,7 +58,7 @@ final class QueryPlanCapture {
       .min(Instant::compareTo)
       .orElse(Instant.now());
 
-    return firstPending.isBefore(Instant.now().minusSeconds(60));
+    return firstPending.isBefore(Instant.now().minusSeconds(captureDelaySecs));
   }
 
   /**

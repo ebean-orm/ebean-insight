@@ -155,7 +155,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
       .build();
 
     if (builder.capturePlans() && !databaseList.isEmpty()) {
-      planCapture = new QueryPlanCapture(databaseList.get(0), this, 10, builder.queryPlanListener());
+      planCapture = new QueryPlanCapture(databaseList.get(0), this, 10, builder.captureDelaySecs(), builder.queryPlanListener());
     } else {
       planCapture = null;
     }
@@ -510,6 +510,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
 
     private boolean enabled;
     private boolean capturePlans;
+    private int captureDelaySecs;
     private Consumer<MetaQueryPlan> queryPlanListener;
     private String url;
     private String key;
@@ -538,6 +539,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
       this.collectEbeanMetrics = Config.getBool("ebean.insight.collectEbeanMetrics", false);
       this.collectAvajeMetrics = Config.getBool("ebean.insight.collectAvajeMetrics", false);
       this.lambdaMode = Config.getBool("ebean.insight.lambdaMode", false);
+      this.captureDelaySecs = Config.getInt("ebean.insight.queryPlan.captureDelaySecs", 60);
       this.appName = Config.getNullable("app.name");
       // Primary is the avaje standard 'app.environment'; fall back to the
       // 'app.env' property / APP_ENV env var used by some apps. OTEL resource
@@ -728,6 +730,22 @@ public class InsightClient implements Consumer<ServerMetrics> {
     }
 
     /**
+     * Set the delay (seconds) between arming a query-plan capture and harvesting
+     * it - the window in which the application must re-execute the query so Ebean
+     * can buffer its execution plan. Defaults to 60
+     * (config {@code ebean.insight.queryPlan.captureDelaySecs}).
+     * <p>
+     * A shorter delay collects plans sooner - useful in lambdaMode where a warm
+     * instance may be frozen between invocations, so a long wall-clock gate can
+     * straddle freeze/thaw cycles. Too short risks harvesting before the query
+     * has re-run.
+     */
+    public Builder captureDelaySeconds(int captureDelaySecs) {
+      this.captureDelaySecs = captureDelaySecs;
+      return this;
+    }
+
+    /**
      * Run with no background threads, performing all I/O synchronously on the
      * calling thread - for AWS Lambda (and similar freeze/thaw runtimes) where
      * background timers and async HTTP callbacks are unreliable.
@@ -786,6 +804,10 @@ public class InsightClient implements Consumer<ServerMetrics> {
 
     boolean capturePlans() {
       return capturePlans;
+    }
+
+    int captureDelaySecs() {
+      return captureDelaySecs;
     }
 
     boolean collectEbeanMetrics() {

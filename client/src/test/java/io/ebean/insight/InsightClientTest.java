@@ -103,6 +103,23 @@ class InsightClientTest {
   }
 
   @Test
+  void captureDelaySecs_defaultsTo60() {
+    assertThat(InsightClient.builder().captureDelaySecs()).isEqualTo(60);
+    assertThat(InsightClient.builder().captureDelaySeconds(5).captureDelaySecs()).isEqualTo(5);
+  }
+
+  @Test
+  void captureDelaySecs_configOverride() {
+    Config.setProperty("ebean.insight.queryPlan.captureDelaySecs", "15");
+    try {
+      assertThat(InsightClient.builder().captureDelaySecs()).isEqualTo(15);
+    } finally {
+      Config.clearProperty("ebean.insight.queryPlan.captureDelaySecs");
+    }
+    assertThat(InsightClient.builder().captureDelaySecs()).isEqualTo(60);
+  }
+
+  @Test
   void register_noDatabase_returnsClient_noThrow() {
     // forwarder wiring needs a database; with none it warns and is a no-op.
     // (the per-database DatabaseMetricSupplier forwarding is covered by

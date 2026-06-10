@@ -17,7 +17,7 @@ class QueryPlanCaptureTest {
   @Test
   void notifyListener_invokesListenerWithPlan() {
     List<MetaQueryPlan> received = new ArrayList<>();
-    QueryPlanCapture capture = new QueryPlanCapture(null, null, 10, received::add);
+    QueryPlanCapture capture = new QueryPlanCapture(null, null, 10, 60, received::add);
 
     MetaQueryPlan plan = new Plan("h1");
     capture.notifyListener(plan);
@@ -27,7 +27,7 @@ class QueryPlanCaptureTest {
 
   @Test
   void notifyListener_swallowsListenerException() {
-    QueryPlanCapture capture = new QueryPlanCapture(null, null, 10, p -> {
+    QueryPlanCapture capture = new QueryPlanCapture(null, null, 10, 60, p -> {
       throw new RuntimeException("boom");
     });
 
@@ -37,7 +37,7 @@ class QueryPlanCaptureTest {
 
   @Test
   void notifyListener_nullListener_noop() {
-    QueryPlanCapture capture = new QueryPlanCapture(null, null, 10, null);
+    QueryPlanCapture capture = new QueryPlanCapture(null, null, 10, 60, null);
     capture.notifyListener(new Plan("h1"));
   }
 
