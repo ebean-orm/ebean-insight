@@ -65,6 +65,16 @@ import static java.net.http.HttpResponse.BodyHandlers.ofString;
  * client's internal Timer doesn't also poll ebean metrics. With both
  * {@code collectEbeanMetrics} and {@code collectAvajeMetrics} false, the metric
  * Timer task is not scheduled at all — only {@link QueryPlanCapture} runs.
+ *
+ * <h2>Lambda / synchronous mode</h2>
+ * {@code lambdaMode(true)} runs with <em>no background threads</em>: the metric
+ * Timer is not scheduled, the {@link QueryPlanCapture} background poll is not
+ * started, metric/plan POSTs are synchronous, and query-plan capture is advanced
+ * inline from {@link #accept(ServerMetrics)} each report cycle. This suits AWS
+ * Lambda (and similar freeze/thaw runtimes) where background timers and async
+ * HTTP callbacks are unreliable — an upstream avaje-metrics {@code ScheduledTask}
+ * drives {@code accept()} so the Lambda's {@code scheduledTask.waitIfRunning()}
+ * drain covers insight reporting too. See {@link Builder#lambdaMode(boolean)}.
  */
 public class InsightClient implements Consumer<ServerMetrics> {
 
@@ -84,6 +94,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
   private final boolean gzip;
   private final boolean collectEbeanMetrics;
   private final boolean collectAvajeMetrics;
+  private final boolean lambdaMode;
   private final List<Database> databaseList = new ArrayList<>();
   private final Timer timer;
   private final HttpClient httpClient;
@@ -136,6 +147,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
     }
     this.collectEbeanMetrics = builder.collectEbeanMetrics;
     this.collectAvajeMetrics = builder.isCollectAvajeMetrics();
+    this.lambdaMode = builder.lambdaMode;
     this.timer = new Timer("ebeanInsight", true);
     this.httpClient = HttpClient.newBuilder()
       .version(HttpClient.Version.HTTP_1_1)
@@ -220,12 +232,12 @@ public class InsightClient implements Consumer<ServerMetrics> {
     if (!ping || ping()) {
       active = true;
       lastEventTime = System.currentTimeMillis();
-      if (collectEbeanMetrics || collectAvajeMetrics) {
+      if (!lambdaMode && (collectEbeanMetrics || collectAvajeMetrics)) {
         long periodMillis = periodSecs * 1000;
         Date first = new Date(lastEventTime + periodMillis);
         timer.schedule(new Task(), first, periodMillis);
       }
-      if (planCapture != null) {
+      if (planCapture != null && !lambdaMode) {
         planCapture.start();
       }
       log.log(INFO, "insight enabled");
@@ -295,6 +307,13 @@ public class InsightClient implements Consumer<ServerMetrics> {
       post(ingestUri, buildExternalMetricsJson(metrics));
     } catch (Throwable e) {
       log.log(WARNING, "Error reporting ebean metrics", e);
+    }
+    if (lambdaMode && planCapture != null) {
+      // no background timer in lambdaMode - advance the query-plan capture
+      // state machine inline so it runs on (and is awaited by) the caller's
+      // thread. The metrics POST above is synchronous in lambdaMode, so its
+      // response has already armed any new plans before we progress here.
+      planCapture.progress();
     }
   }
 
@@ -433,6 +452,23 @@ public class InsightClient implements Consumer<ServerMetrics> {
     }
 
     final long latencyStart = System.currentTimeMillis();
+    if (lambdaMode) {
+      // synchronous POST so the response (which carries query-plan capture
+      // directives) is processed on the caller's thread before returning -
+      // no background HttpClient callback that could be suspended by a Lambda
+      // freeze.
+      try {
+        HttpResponse<String> res = httpClient.send(builder.build(), ofString());
+        latencyMillis = System.currentTimeMillis() - latencyStart;
+        handleResponse(res.statusCode(), res.body());
+      } catch (IOException e) {
+        log.log(WARNING, "Failed to send metrics - {0}", e.toString());
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.log(WARNING, "Interrupted sending metrics - {0}", e.toString());
+      }
+      return;
+    }
     httpClient.sendAsync(builder.build(), ofString())
       .whenComplete((res, ex) -> {
         if (ex != null) {
@@ -440,13 +476,16 @@ public class InsightClient implements Consumer<ServerMetrics> {
           return;
         }
         latencyMillis = System.currentTimeMillis() - latencyStart;
-        final int code = res.statusCode();
-        if (code < 300) {
-          processBody(res.body());
-        } else {
-          log.log(INFO, "Failed to send metrics - response code:{0} body:{1}", code, res.body());
-        }
+        handleResponse(res.statusCode(), res.body());
       });
+  }
+
+  private void handleResponse(int code, String body) {
+    if (code < 300) {
+      processBody(body);
+    } else {
+      log.log(INFO, "Failed to send metrics - response code:{0} body:{1}", code, body);
+    }
   }
 
   /**
@@ -484,6 +523,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
     private boolean ping;
     private boolean collectEbeanMetrics;
     private boolean collectAvajeMetrics;
+    private boolean lambdaMode;
     private final List<Database> databaseList = new ArrayList<>();
     private final Map<String, String> resAttrs = new LinkedHashMap<>();
 
@@ -497,6 +537,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
       this.ping = Config.getBool("ebean.insight.ping", false);
       this.collectEbeanMetrics = Config.getBool("ebean.insight.collectEbeanMetrics", false);
       this.collectAvajeMetrics = Config.getBool("ebean.insight.collectAvajeMetrics", false);
+      this.lambdaMode = Config.getBool("ebean.insight.lambdaMode", false);
       this.appName = Config.getNullable("app.name");
       // Primary is the avaje standard 'app.environment'; fall back to the
       // 'app.env' property / APP_ENV env var used by some apps. OTEL resource
@@ -687,6 +728,27 @@ public class InsightClient implements Consumer<ServerMetrics> {
     }
 
     /**
+     * Run with no background threads, performing all I/O synchronously on the
+     * calling thread - for AWS Lambda (and similar freeze/thaw runtimes) where
+     * background timers and async HTTP callbacks are unreliable.
+     * <p>
+     * When enabled: the internal metric {@code Timer} is never scheduled and the
+     * {@link QueryPlanCapture} background poll is not started; metric/plan POSTs
+     * are synchronous (so the response - which carries plan-capture directives -
+     * is handled before returning); and query-plan capture is advanced inline
+     * from {@link InsightClient#accept(ServerMetrics)} each report cycle.
+     * <p>
+     * Designed for the forwarder role: an upstream avaje-metrics
+     * {@code ScheduledTask} owns the poll and drives {@code accept()}, so the
+     * Lambda's existing {@code scheduledTask.waitIfRunning()} drain also covers
+     * insight reporting. Defaults to false (config {@code ebean.insight.lambdaMode}).
+     */
+    public Builder lambdaMode(boolean lambdaMode) {
+      this.lambdaMode = lambdaMode;
+      return this;
+    }
+
+    /**
      * Register a listener notified for each query plan as it is captured.
      * <p>
      * The listener is invoked once per captured {@link MetaQueryPlan} on Ebean's
@@ -728,6 +790,10 @@ public class InsightClient implements Consumer<ServerMetrics> {
 
     boolean collectEbeanMetrics() {
       return collectEbeanMetrics;
+    }
+
+    boolean lambdaMode() {
+      return lambdaMode;
     }
 
     Consumer<MetaQueryPlan> queryPlanListener() {

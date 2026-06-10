@@ -86,6 +86,23 @@ class InsightClientTest {
   }
 
   @Test
+  void lambdaMode_defaultsToFalse() {
+    assertThat(InsightClient.builder().lambdaMode()).isFalse();
+    assertThat(InsightClient.builder().lambdaMode(true).lambdaMode()).isTrue();
+  }
+
+  @Test
+  void lambdaMode_configOverride() {
+    Config.setProperty("ebean.insight.lambdaMode", "true");
+    try {
+      assertThat(InsightClient.builder().lambdaMode()).isTrue();
+    } finally {
+      Config.clearProperty("ebean.insight.lambdaMode");
+    }
+    assertThat(InsightClient.builder().lambdaMode()).isFalse();
+  }
+
+  @Test
   void register_noDatabase_returnsClient_noThrow() {
     // forwarder wiring needs a database; with none it warns and is a no-op.
     // (the per-database DatabaseMetricSupplier forwarding is covered by

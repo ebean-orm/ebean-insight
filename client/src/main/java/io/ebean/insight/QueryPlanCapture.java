@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 import static java.lang.System.Logger.Level.*;
@@ -21,6 +22,7 @@ final class QueryPlanCapture {
 
   private final Map<QueryPlanInit,Instant> pendingInit = new ConcurrentHashMap<>();
   private final Map<String, Instant> pendingCapture = new ConcurrentHashMap<>();
+  private final AtomicBoolean running = new AtomicBoolean();
 
   private final Database database;
   private final InsightClient client;
@@ -35,7 +37,7 @@ final class QueryPlanCapture {
   }
 
   void start() {
-    database.backgroundExecutor().scheduleAtFixedRate(this::periodic, freqSeconds, freqSeconds, TimeUnit.SECONDS);
+    database.backgroundExecutor().scheduleAtFixedRate(this::progress, freqSeconds, freqSeconds, TimeUnit.SECONDS);
   }
 
   void process(String rawMessage) {
@@ -57,7 +59,19 @@ final class QueryPlanCapture {
     return firstPending.isBefore(Instant.now().minusSeconds(60));
   }
 
-  private void periodic() {
+  /**
+   * Advance the query-plan capture state machine once: initialise pending
+   * captures, and if any have been armed long enough, collect and send them.
+   * <p>
+   * Driven by the background scheduler in normal mode, or inline from
+   * {@link InsightClient#accept} in lambdaMode. A single-flight guard drops an
+   * overlapping call (the next cycle picks the work up) so concurrent callers
+   * never double-collect/double-send.
+   */
+  void progress() {
+    if (!running.compareAndSet(false, true)) {
+      return;
+    }
     try {
       pendingCaptureInitialisation();
       if (!hasPending()) {
@@ -83,6 +97,8 @@ final class QueryPlanCapture {
       }
     } catch (Exception e) {
       log.log(WARNING, "Error during query plan capture", e);
+    } finally {
+      running.set(false);
     }
   }
 
