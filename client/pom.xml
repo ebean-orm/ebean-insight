@@ -54,6 +54,7 @@
       <groupId>io.avaje</groupId>
       <artifactId>avaje-metrics-ebean</artifactId>
       <version>9.16-RC6</version>
+      <optional>true</optional>
       <exclusions>
         <!-- ebean (optional, app-provided) supplies these at the app's version -->
         <exclusion>

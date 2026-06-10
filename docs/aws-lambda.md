@@ -29,9 +29,20 @@ covers insight reporting — no extra waiter is needed.
 
 ## Dependencies
 
-`register()` (below) needs `avaje-metrics-ebean` on the classpath; it is a
-non-optional dependency of `ebean-insight` so it is pulled in transitively. You
-already have Ebean and avaje-metrics in a Lambda that reports metrics.
+`register()` (below) needs `avaje-metrics-ebean` on the classpath. It is an
+**optional** dependency of `ebean-insight`, so pull it in alongside the client.
+The simplest option is the `avaje-metrics-ebean-insight` aggregator, which brings
+both together:
+
+```xml
+<dependency>
+  <groupId>io.avaje</groupId>
+  <artifactId>avaje-metrics-ebean-insight</artifactId>
+  <version>LATEST</version>
+</dependency>
+```
+
+Or add the two explicitly:
 
 ```xml
 <dependency>
@@ -39,7 +50,14 @@ already have Ebean and avaje-metrics in a Lambda that reports metrics.
   <artifactId>ebean-insight</artifactId>
   <version>LATEST</version>
 </dependency>
+<dependency>
+  <groupId>io.avaje</groupId>
+  <artifactId>avaje-metrics-ebean</artifactId>
+  <version>LATEST</version>
+</dependency>
 ```
+
+You already have Ebean and avaje-metrics in a Lambda that reports metrics.
 
 ## Setup
 

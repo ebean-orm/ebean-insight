@@ -190,8 +190,11 @@ public class InsightClient implements Consumer<ServerMetrics> {
    * same database (a double reset-on-read split).
    *
    * <p>Requires {@code avaje-metrics-ebean} on the classpath/module-path (an
-   * optional dependency). For full control over supplier options
-   * ({@code legacyNames}, pool metrics) build the supplier explicitly with
+   * optional dependency). The simplest way to pull it in alongside this client
+   * is the {@code io.avaje:avaje-metrics-ebean-insight} aggregator; otherwise
+   * add {@code io.avaje:avaje-metrics-ebean} explicitly. For full control over
+   * supplier options ({@code legacyNames}, pool metrics) build the supplier
+   * explicitly with
    * {@code DatabaseMetricSupplier.builder(database).forwardTo(client)} instead.
    *
    * @return this client
