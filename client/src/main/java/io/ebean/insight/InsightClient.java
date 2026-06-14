@@ -8,6 +8,7 @@ import io.avaje.metrics.ebean.DatabaseMetricSupplier;
 import io.ebean.Database;
 import io.ebean.meta.MetaQueryPlan;
 import io.ebean.meta.ServerMetrics;
+import io.ebean.meta.ServerMetricsAsJson;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -94,6 +95,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
   private final boolean gzip;
   private final boolean collectEbeanMetrics;
   private final boolean collectAvajeMetrics;
+  private final boolean metricsV2;
   private final boolean lambdaMode;
   private final List<Database> databaseList = new ArrayList<>();
   private final Timer timer;
@@ -147,6 +149,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
     }
     this.collectEbeanMetrics = builder.collectEbeanMetrics;
     this.collectAvajeMetrics = builder.isCollectAvajeMetrics();
+    this.metricsV2 = builder.metricsV2;
     this.lambdaMode = builder.lambdaMode;
     this.timer = new Timer("ebeanInsight", true);
     this.httpClient = HttpClient.newBuilder()
@@ -337,9 +340,16 @@ public class InsightClient implements Consumer<ServerMetrics> {
     json.keyVal("eventTime", eventTime);
     json.keyVal("startEventTime", startEventTime);
     json.keyValMap("resAttrs", resAttrs);
+    if (metricsV2) {
+      json.keyVal("v", 2);
+    }
     json.key("dbs");
     json.append('[');
-    metrics.asJson().write(json.buffer());
+    if (metricsV2) {
+      metrics.asJson().writeV2(json.buffer());
+    } else {
+      metrics.asJson().write(json.buffer());
+    }
     json.append(']');
     json.append("}");
     return json.asJson();
@@ -396,6 +406,9 @@ public class InsightClient implements Consumer<ServerMetrics> {
     json.keyVal("latency", latencyMillis);
     json.keyValMap("resAttrs", resAttrs);
 
+    if (metricsV2) {
+      json.keyVal("v", 2);
+    }
     if (collectAvajeMetrics) {
       addAvajeMetrics(json);
     }
@@ -409,7 +422,11 @@ public class InsightClient implements Consumer<ServerMetrics> {
   private void addAvajeMetrics(JsonSimple json) {
     json.key("metrics");
     json.append("[");
-    Metrics.collectAsJson().write(json.buffer());
+    if (metricsV2) {
+      Metrics.collectAsJson().writeV2(json.buffer());
+    } else {
+      Metrics.collectAsJson().write(json.buffer());
+    }
     json.append("]");
   }
 
@@ -423,7 +440,12 @@ public class InsightClient implements Consumer<ServerMetrics> {
       if (i > 0) {
         json.buffer().append(',');
       }
-      databaseList.get(i).metaInfo().collectMetrics().asJson().write(json.buffer());
+      ServerMetricsAsJson asJson = databaseList.get(i).metaInfo().collectMetrics().asJson();
+      if (metricsV2) {
+        asJson.writeV2(json.buffer());
+      } else {
+        asJson.write(json.buffer());
+      }
     }
     json.append(']');
   }
@@ -527,6 +549,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
     private boolean ping;
     private boolean collectEbeanMetrics;
     private boolean collectAvajeMetrics;
+    private boolean metricsV2;
     private boolean lambdaMode;
     private final List<Database> databaseList = new ArrayList<>();
     private final Map<String, String> resAttrs = new LinkedHashMap<>();
@@ -541,6 +564,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
       this.ping = Config.getBool("ebean.insight.ping", false);
       this.collectEbeanMetrics = Config.getBool("ebean.insight.collectEbeanMetrics", false);
       this.collectAvajeMetrics = Config.getBool("ebean.insight.collectAvajeMetrics", false);
+      this.metricsV2 = Config.getBool("ebean.insight.metricsV2", false);
       this.lambdaMode = Config.getBool("ebean.insight.lambdaMode", false);
       this.captureDelaySecs = Config.getInt("ebean.insight.queryPlan.captureDelaySecs", 60);
       this.appName = Config.getNullable("app.name");
@@ -619,6 +643,18 @@ public class InsightClient implements Consumer<ServerMetrics> {
      */
     public Builder timeoutSecs(int timeoutSecs) {
       this.timeoutSecs = timeoutSecs;
+      return this;
+    }
+
+    /**
+     * Set true to emit metrics using the v2 JSON format (canonical {@code name} +
+     * sorted {@code "key:value,..."} {@code tags} string) and mark the payload with
+     * {@code "v":2}. Defaults to false (legacy flat-name v1 format).
+     * <p>
+     * Only enable this once the receiving insight-server supports v2 ingest.
+     */
+    public Builder metricsV2(boolean metricsV2) {
+      this.metricsV2 = metricsV2;
       return this;
     }
 
@@ -815,6 +851,10 @@ public class InsightClient implements Consumer<ServerMetrics> {
 
     boolean collectEbeanMetrics() {
       return collectEbeanMetrics;
+    }
+
+    boolean metricsV2() {
+      return metricsV2;
     }
 
     boolean lambdaMode() {

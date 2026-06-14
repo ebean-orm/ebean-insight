@@ -178,6 +178,28 @@ class InsightClientTest {
   }
 
   @Test
+  void metricsV2_defaultFalse() {
+    assertThat(InsightClient.builder().metricsV2()).isFalse();
+    assertThat(InsightClient.builder().metricsV2(true).metricsV2()).isTrue();
+  }
+
+  @Test
+  void buildJsonContent_v2EnvelopeMarker() {
+    InsightClient v1 = InsightClient.builder()
+      .collectEbeanMetrics(false)
+      .collectAvajeMetrics(false)
+      .build();
+    assertThat(v1.buildJsonContent()).doesNotContain("\"v\":2");
+
+    InsightClient v2 = InsightClient.builder()
+      .collectEbeanMetrics(false)
+      .collectAvajeMetrics(false)
+      .metricsV2(true)
+      .build();
+    assertThat(v2.buildJsonContent()).contains("\"v\":2");
+  }
+
+  @Test
   void buildJsonContent() {
     InsightClient client = InsightClient.builder()
       .collectEbeanMetrics(false)
