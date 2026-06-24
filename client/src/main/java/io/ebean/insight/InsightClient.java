@@ -370,7 +370,24 @@ public class InsightClient implements Consumer<ServerMetrics> {
       json.begin('{');
       json.keyVal("hash", metaQueryPlan.hash());
       json.keyVal("whenCaptured", metaQueryPlan.whenCaptured().toString());
-      json.keyVal("label", metaQueryPlan.label());
+      // v2 identity: kind (orm/dto/sql), bean type, and a prefix-free label
+      String flatLabel = metaQueryPlan.label();
+      String kind = null;
+      String label = flatLabel;
+      if (flatLabel != null) {
+        int dot = flatLabel.indexOf('.');
+        if (dot > 0) {
+          String prefix = flatLabel.substring(0, dot);
+          if (prefix.equals("orm") || prefix.equals("dto") || prefix.equals("sql")) {
+            kind = prefix;
+            label = flatLabel.substring(dot + 1);
+          }
+        }
+      }
+      json.keyVal("kind", kind);
+      Class<?> beanType = metaQueryPlan.beanType();
+      json.keyVal("type", beanType == null ? null : beanType.getSimpleName());
+      json.keyVal("label", label);
       json.keyVal("queryTimeMicros",metaQueryPlan.queryTimeMicros());
       json.keyVal("captureMicros", metaQueryPlan.captureMicros());
       json.keyVal("captureCount", metaQueryPlan.captureCount());

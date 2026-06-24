@@ -363,6 +363,28 @@ class InsightClientTest {
     }
   }
 
+  @Test
+  void buildPlanJson_structuredIdentity_kindTypeAndPrefixFreeLabel() {
+    InsightClient client = InsightClient.builder()
+      .environment("e")
+      .appName("a")
+      .build();
+
+    Instant when = Instant.parse("2025-01-02T03:04:05.123Z");
+    var plans = List.<MetaQueryPlan>of(
+      new Plan("select 1", "abc", when, "orm.Customer.findList", Customer.class));
+
+    String json = client.buildPlansJson(plans);
+    assertThat(json)
+      .contains("\"kind\":\"orm\"")
+      .contains("\"type\":\"Customer\"")
+      .contains("\"label\":\"Customer.findList\"")
+      .doesNotContain("orm.Customer.findList");
+  }
+
+  static class Customer {
+  }
+
   private MetaQueryPlan newPlan(String sql, String hash, Instant whenCaptured) {
     return new Plan(sql, hash, whenCaptured);
   }
@@ -372,21 +394,29 @@ class InsightClientTest {
     private final String sql;
     private final String hash;
     private final Instant whenCaptured;
+    private final String label;
+    private final Class<?> beanType;
 
     Plan(String sql, String hash, Instant whenCaptured) {
+      this(sql, hash, whenCaptured, "la", null);
+    }
+
+    Plan(String sql, String hash, Instant whenCaptured, String label, Class<?> beanType) {
       this.sql = sql;
       this.hash = hash;
       this.whenCaptured = whenCaptured;
+      this.label = label;
+      this.beanType = beanType;
     }
 
     @Override
     public Class<?> beanType() {
-      return null;
+      return beanType;
     }
 
     @Override
     public String label() {
-      return "la";
+      return label;
     }
 
     @Override
