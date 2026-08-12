@@ -2,6 +2,7 @@ package io.ebean.insight;
 
 import io.avaje.applog.AppLog;
 import io.avaje.config.Config;
+import io.avaje.metrics.Metric;
 import io.avaje.metrics.MetricRegistry;
 import io.avaje.metrics.Metrics;
 import io.avaje.metrics.ebean.DatabaseMetricSupplier;
@@ -60,7 +61,7 @@ import static java.net.http.HttpResponse.BodyHandlers.ofString;
  * <p>
  * The {@link #register()} convenience wires this up per registered database
  * ({@code build().register()}); for full control build the supplier explicitly
- * with {@code DatabaseMetricSupplier.builder(database).forwardTo(client)}.
+ * with {@code DatabaseMetricSupplier.builder(database).forwardSnapshotTo(client::accept)}.
  * <p>
  * With this pattern leave {@code collectEbeanMetrics(false)} (the default) so the
  * client's internal Timer doesn't also poll ebean metrics. With both
@@ -188,7 +189,9 @@ public class InsightClient implements Consumer<ServerMetrics> {
    *
    * <p>This is the blessed convenience for the <em>forwarder</em> role: a single
    * avaje-metrics-owned poll collects the Ebean metrics and fans the snapshot out
-   * here via {@link #accept(ServerMetrics)}. Leave {@code collectEbeanMetrics}
+   * here via {@link #accept(ServerMetrics)}. The supplier also forwards the
+   * already-collected Avaje statistics, including datasource pool metrics.
+   * Leave {@code collectEbeanMetrics}
    * false (the default) so the client's own Timer does not <em>also</em> poll the
    * same database (a double reset-on-read split).
    *
@@ -198,7 +201,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
    * add {@code io.avaje:avaje-metrics-ebean} explicitly. For full control over
    * supplier options ({@code legacyNames}, pool metrics) build the supplier
    * explicitly with
-   * {@code DatabaseMetricSupplier.builder(database).forwardTo(client)} instead.
+   * {@code DatabaseMetricSupplier.builder(database).forwardSnapshotTo(client::accept)} instead.
    *
    * @return this client
    */
@@ -211,7 +214,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
       log.log(WARNING, "InsightClient.register() with collectEbeanMetrics(true) double-polls the database - prefer the forwarder default collectEbeanMetrics(false)");
     }
     for (Database database : databaseList) {
-      DatabaseMetricSupplier.builder(database).forwardTo(this).build().register();
+      DatabaseMetricSupplier.builder(database).forwardSnapshotTo(this::accept).build().register();
     }
     return this;
   }
@@ -225,7 +228,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
    */
   public InsightClient register(MetricRegistry registry) {
     for (Database database : databaseList) {
-      DatabaseMetricSupplier.builder(database).forwardTo(this).build().register(registry);
+      DatabaseMetricSupplier.builder(database).forwardSnapshotTo(this::accept).build().register(registry);
     }
     return this;
   }
@@ -306,11 +309,23 @@ public class InsightClient implements Consumer<ServerMetrics> {
    */
   @Override
   public void accept(ServerMetrics metrics) {
-    if (!enabled || !active || metrics == null) {
+    accept(metrics, null);
+  }
+
+  /**
+   * Accept an externally-collected Ebean snapshot and its corresponding
+   * already-collected Avaje statistics, then POST both in one payload.
+   * <p>
+   * The Avaje list must come from the same collection pass as the Ebean
+   * snapshot. In particular, do not call {@link Metrics#collectAsJson()} here,
+   * as that would poll reset-on-read suppliers a second time.
+   */
+  public void accept(ServerMetrics metrics, List<Metric.Statistics> avajeMetrics) {
+    if (!enabled || !active || (metrics == null && (avajeMetrics == null || avajeMetrics.isEmpty()))) {
       return;
     }
     try {
-      post(ingestUri, buildExternalMetricsJson(metrics));
+      post(ingestUri, buildExternalMetricsJson(metrics, avajeMetrics));
     } catch (Throwable e) {
       log.log(WARNING, "Error reporting ebean metrics", e);
     }
@@ -324,6 +339,10 @@ public class InsightClient implements Consumer<ServerMetrics> {
   }
 
   private String buildExternalMetricsJson(ServerMetrics metrics) {
+    return buildExternalMetricsJson(metrics, null);
+  }
+
+  String buildExternalMetricsJson(ServerMetrics metrics, List<Metric.Statistics> avajeMetrics) {
     final long eventTime;
     final long startEventTime;
     synchronized (this) {
@@ -343,14 +362,22 @@ public class InsightClient implements Consumer<ServerMetrics> {
     if (metricsV2) {
       json.keyVal("v", 2);
     }
-    json.key("dbs");
-    json.append('[');
-    if (metricsV2) {
-      metrics.asJson().writeV2(json.buffer());
-    } else {
-      metrics.asJson().write(json.buffer());
+    if (metrics != null) {
+      json.key("dbs");
+      json.append('[');
+      if (metricsV2) {
+        metrics.asJson().writeV2(json.buffer());
+      } else {
+        metrics.asJson().write(json.buffer());
+      }
+      json.append(']');
     }
-    json.append(']');
+    if (avajeMetrics != null && !avajeMetrics.isEmpty()) {
+      json.key("metrics");
+      json.append('[');
+      MetricStatisticsJson.write(json.buffer(), avajeMetrics, metricsV2);
+      json.append(']');
+    }
     json.append("}");
     return json.asJson();
   }
@@ -937,7 +964,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
 
     private boolean detectAvajeMetrics() {
       try {
-        Class.forName("io.avaje.metrics.MetricManager");
+        Class.forName("io.avaje.metrics.Metrics");
         return true;
       } catch (ClassNotFoundException e) {
         return false;

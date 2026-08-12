@@ -2,7 +2,10 @@ package io.ebean.insight;
 
 
 import io.avaje.config.Config;
+import io.avaje.metrics.Metric;
 import io.avaje.metrics.Metrics;
+import io.avaje.metrics.Tags;
+import io.avaje.metrics.stats.GaugeLongStats;
 import io.ebean.ProfileLocation;
 import io.ebean.meta.MetaQueryPlan;
 import org.junit.jupiter.api.Disabled;
@@ -211,6 +214,53 @@ class InsightClientTest {
     assertThat(jsonContent).contains(",\"startEventTime\":");
     assertThat(jsonContent).contains(" ,\"collect\":");
     assertThat(jsonContent).doesNotContain(" ,\"metrics\":[");
+  }
+
+  @Test
+  void buildExternalMetricsJson_includesAlreadyCollectedAvajeMetrics() {
+    InsightClient client = InsightClient.builder()
+      .environment("e")
+      .appName("a")
+      .metricsV2(false)
+      .build();
+
+    var stats = List.<Metric.Statistics>of(
+      new GaugeLongStats(
+        Metric.ID.of("datasource.pool.size", Tags.of("db:h2", "type:main")),
+        10));
+
+    String json = client.buildExternalMetricsJson(null, stats);
+
+    assertThat(json)
+      .contains("\"metrics\":[{\"name\":\"datasource.pool.size\",\"value\":10,\"tags\":[\"db:h2\",\"type:main\"]}]");
+  }
+
+  @Test
+  void buildExternalMetricsJson_v2_usesCanonicalTags() {
+    InsightClient client = InsightClient.builder()
+      .metricsV2(true)
+      .build();
+
+    var stats = List.<Metric.Statistics>of(
+      new GaugeLongStats(
+        Metric.ID.of("datasource.pool.size", Tags.of("type:main", "db:h2")),
+        10));
+
+    String json = client.buildExternalMetricsJson(null, stats);
+
+    assertThat(json)
+      .contains("\"metrics\":[{\"name\":\"datasource.pool.size\",\"value\":10,\"tags\":\"db:h2,type:main\"}]")
+      .contains("\"v\":2");
+  }
+
+  @Test
+  void collectAvajeMetrics_detectsMetricsApi() {
+    InsightClient client = InsightClient.builder()
+      .collectEbeanMetrics(false)
+      .collectAvajeMetrics(true)
+      .build();
+
+    assertThat(client.buildJsonContent()).contains("\"metrics\":[");
   }
 
   @Test
