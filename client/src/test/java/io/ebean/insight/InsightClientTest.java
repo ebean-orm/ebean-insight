@@ -7,12 +7,14 @@ import io.avaje.metrics.Metrics;
 import io.avaje.metrics.Tags;
 import io.avaje.metrics.stats.GaugeLongStats;
 import io.ebean.ProfileLocation;
+import io.ebean.meta.BasicMetricVisitor;
 import io.ebean.meta.MetaQueryPlan;
+import io.ebean.meta.MetricNamingMatch;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -229,7 +231,7 @@ class InsightClientTest {
         Metric.ID.of("datasource.pool.size", Tags.of("db:h2", "type:main")),
         10));
 
-    String json = client.buildExternalMetricsJson(null, stats);
+    String json = client.buildJson(Collections.emptyList(), stats);
 
     assertThat(json)
       .contains("\"metrics\":[{\"name\":\"datasource.pool.size\",\"value\":10,\"tags\":[\"db:h2\",\"type:main\"]}]");
@@ -246,11 +248,32 @@ class InsightClientTest {
         Metric.ID.of("datasource.pool.size", Tags.of("type:main", "db:h2")),
         10));
 
-    String json = client.buildExternalMetricsJson(null, stats);
+    String json = client.buildJson(Collections.emptyList(), stats);
 
     assertThat(json)
       .contains("\"metrics\":[{\"name\":\"datasource.pool.size\",\"value\":10,\"tags\":\"db:h2,type:main\"}]")
       .contains("\"v\":2");
+  }
+
+  @Test
+  void buildExternalMetricsJson_includesMultipleDatabaseSnapshots() {
+    InsightClient client = InsightClient.builder()
+      .environment("e")
+      .appName("a")
+      .build();
+
+    var databaseOne = new BasicMetricVisitor(
+      "db-one", MetricNamingMatch.INSTANCE, false, true, true, true);
+    var databaseTwo = new BasicMetricVisitor(
+      "db-two", MetricNamingMatch.INSTANCE, false, true, true, true);
+
+    String json = client.buildJson(
+      List.of(databaseOne, databaseTwo), null);
+
+    assertThat(json)
+      .contains("\"dbs\":[")
+      .contains("\"db\":\"db-one\"")
+      .contains("\"db\":\"db-two\"");
   }
 
   @Test

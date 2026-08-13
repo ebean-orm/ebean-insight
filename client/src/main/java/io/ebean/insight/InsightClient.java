@@ -321,11 +321,25 @@ public class InsightClient implements Consumer<ServerMetrics> {
    * as that would poll reset-on-read suppliers a second time.
    */
   public void accept(ServerMetrics metrics, List<Metric.Statistics> avajeMetrics) {
-    if (!enabled || !active || (metrics == null && (avajeMetrics == null || avajeMetrics.isEmpty()))) {
+    sendNow(avajeMetrics, metrics == null ? null : List.of(metrics));
+  }
+
+  /**
+   * Accept externally-collected Avaje metrics and database snapshots, then
+   * POST them together to insight-server immediately.
+   *
+   * <p>The caller owns collection and reset-on-read semantics. The supplied
+   * database snapshots and Avaje metrics should represent the same reporting
+   * interval.
+   */
+  public void sendNow(List<Metric.Statistics> avajeMetrics, List<ServerMetrics> databaseMetrics) {
+    if (!enabled || !active
+      || ((databaseMetrics == null || databaseMetrics.isEmpty())
+      && (avajeMetrics == null || avajeMetrics.isEmpty()))) {
       return;
     }
     try {
-      post(ingestUri, buildExternalMetricsJson(metrics, avajeMetrics));
+      post(ingestUri, buildJson(databaseMetrics, avajeMetrics));
     } catch (Throwable e) {
       log.log(WARNING, "Error reporting ebean metrics", e);
     }
@@ -338,11 +352,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
     }
   }
 
-  private String buildExternalMetricsJson(ServerMetrics metrics) {
-    return buildExternalMetricsJson(metrics, null);
-  }
-
-  String buildExternalMetricsJson(ServerMetrics metrics, List<Metric.Statistics> avajeMetrics) {
+  String buildJson(List<ServerMetrics> databaseMetrics, List<Metric.Statistics> avajeMetrics) {
     final long eventTime;
     final long startEventTime;
     synchronized (this) {
@@ -362,13 +372,19 @@ public class InsightClient implements Consumer<ServerMetrics> {
     if (metricsV2) {
       json.keyVal("v", 2);
     }
-    if (metrics != null) {
+    if (databaseMetrics != null && !databaseMetrics.isEmpty()) {
       json.key("dbs");
       json.append('[');
-      if (metricsV2) {
-        metrics.asJson().writeV2(json.buffer());
-      } else {
-        metrics.asJson().write(json.buffer());
+      for (int i = 0; i < databaseMetrics.size(); i++) {
+        if (i > 0) {
+          json.append(',');
+        }
+        ServerMetrics metrics = databaseMetrics.get(i);
+        if (metricsV2) {
+          metrics.asJson().writeV2(json.buffer());
+        } else {
+          metrics.asJson().write(json.buffer());
+        }
       }
       json.append(']');
     }
