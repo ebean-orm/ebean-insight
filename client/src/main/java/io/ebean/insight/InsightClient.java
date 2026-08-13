@@ -45,8 +45,7 @@ import static java.net.http.HttpResponse.BodyHandlers.ofString;
  *       .url("http://my-ebean-insight-host")
  *       .appName("myapp")
  *       .environment("dev")
- *       .database(myDatabase)
- *       .capturePlans(true)
+ *       .capturePlansFor(myDatabase)
  *       .key("YeahNah")
  *       .build();
  *
@@ -181,8 +180,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
    *   InsightClient.builder()
    *       .appName("myapp")
    *       .environment("dev")
-   *       .database(database)
-   *       .capturePlans(true)
+   *       .capturePlansFor(database)
    *       .build()
    *       .register();
    * }</pre>
@@ -789,6 +787,14 @@ public class InsightClient implements Consumer<ServerMetrics> {
     }
 
     /**
+     * Register a database for query-plan capture and enable query-plan capture.
+     * This does not change whether the client collects Ebean metrics.
+     */
+    public Builder capturePlansFor(Database database) {
+      return database(database).capturePlans(true);
+    }
+
+    /**
      * Set collection of Ebean ORM metrics. Defaults to false.
      * <p>
      * Leave this false (the default) when InsightClient is a forwarder — i.e. an
@@ -877,8 +883,7 @@ public class InsightClient implements Consumer<ServerMetrics> {
      * <pre>{@code
      *
      *   InsightClient.builder()
-     *     .database(db)
-     *     .capturePlans(true)
+     *     .capturePlansFor(db)
      *     .onQueryPlanCaptured(plan ->
      *       log.atInfo()
      *         .addKeyValue("ebean.plan.hash", plan.hash())
